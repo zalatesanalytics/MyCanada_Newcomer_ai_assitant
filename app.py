@@ -120,10 +120,11 @@ def get_openai_client():
     return openai
 
 
-def generate_ai_answer(user_question: str, faq: dict | None, language: str):
+def generate_ai_answer(user_question: str, faq: dict | None, lang_code: str):
     """
     Call OpenAI (if available) to generate a tailored answer as
     'MyCanada Newcomer AI Assistant'. Returns (answer, error_message).
+    lang_code: "en" or "am"
     """
     client = get_openai_client()
     if client is None:
@@ -148,7 +149,7 @@ def generate_ai_answer(user_question: str, faq: dict | None, language: str):
         "Government of Canada / IRCC sources. Keep answers clear and not too long."
     )
 
-    if "Amharic" in language:
+    if lang_code == "am":
         system_msg += (
             " Respond fully in Amharic (አማርኛ), using simple, clear language and short paragraphs. "
             "You may keep bank or website names in English when needed."
@@ -181,10 +182,32 @@ def generate_ai_answer(user_question: str, faq: dict | None, language: str):
 
 
 # =========================================================
+# Translation helpers (English <-> Amharic)
+# =========================================================
+
+def tr(en: str, am: str) -> str:
+    """Simple inline translation helper."""
+    lang = st.session_state.get("lang", "en")
+    return am if lang == "am" else en
+
+
+def translate_dynamic(item: dict, key: str) -> str:
+    """
+    For content coming from JSON, try keys like 'summary_am'.
+    Fallback to the base key.
+    """
+    lang = st.session_state.get("lang", "en")
+    if lang == "en":
+        return item.get(key, "")
+    am_key = f"{key}_am"
+    return item.get(am_key, item.get(key, ""))
+
+
+# =========================================================
 # Streamlit UI – theming & layout
 # =========================================================
 
-# ---------- Custom CSS (warm orange + calm blue, soft background) ----------
+# ---------- Custom CSS: improved contrast, font size, clean layout ----------
 st.markdown(
     """
     <style>
@@ -193,17 +216,18 @@ st.markdown(
     }
 
     .stApp {
-        background: radial-gradient(circle at 0% 0%, #0f172a 0%, #020617 40%, #020617 100%);
+        background: radial-gradient(circle at 0% 0%, #020617 0%, #020617 40%, #020617 100%);
     }
 
     .block-container {
         padding-top: 1.5rem;
         padding-bottom: 2rem;
-        background: linear-gradient(145deg, #fef9c3 0%, #fffbeb 30%, #ecfdf5 65%, #e5f4ff 100%);
+        background: linear-gradient(145deg, #fefce8 0%, #fffbeb 30%, #ecfdf5 65%, #e0f2fe 100%);
         border-radius: 24px;
-        box-shadow: 0 22px 60px rgba(15, 23, 42, 0.6);
+        box-shadow: 0 22px 60px rgba(15, 23, 42, 0.55);
         margin-top: 1.2rem;
         margin-bottom: 2rem;
+        max-width: 1200px;
     }
 
     /* Centered big title banner */
@@ -218,48 +242,55 @@ st.markdown(
     }
     .mc-hero h1 {
         margin-bottom: 0.3rem;
-        font-size: 2.1rem;
+        font-size: 2.3rem;
         letter-spacing: 0.03em;
     }
     .mc-hero p {
         margin-top: 0;
-        font-size: 0.98rem;
+        font-size: 1.0rem;
+        line-height: 1.5;
         opacity: 0.96;
     }
 
     /* Small pill tags */
     .mc-pill {
         display: inline-block;
-        padding: 0.08rem 0.7rem;
+        padding: 0.12rem 0.8rem;
         border-radius: 999px;
-        font-size: 0.75rem;
+        font-size: 0.78rem;
         font-weight: 600;
-        background-color: rgba(15, 23, 42, 0.18);
-        margin: 0 0.15rem;
+        background-color: rgba(15, 23, 42, 0.22);
+        color: #f9fafb;
+        margin: 0 0.18rem;
     }
 
-    /* Sidebar styling */
+    /* Sidebar styling - better contrast, larger fonts, cleaner layout */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0b1220 0%, #020617 60%, #111827 100%) !important;
+        background: linear-gradient(180deg, #020617 0%, #020617 60%, #020617 100%) !important;
         color: #f9fafb !important;
+        padding: 1.2rem 1rem !important;
     }
     [data-testid="stSidebar"] * {
         color: #e5e7eb !important;
-        font-size: 0.9rem;
+        font-size: 1.0rem !important;
     }
+    [data-testid="stSidebar"] h1,
     [data-testid="stSidebar"] h2,
     [data-testid="stSidebar"] h3 {
         color: #facc15 !important;
+        margin-bottom: 0.4rem !important;
     }
-
-    /* Make radio & checkbox labels readable against dark sidebar */
     [data-testid="stSidebar"] label {
         color: #e5e7eb !important;
+        font-weight: 500;
+    }
+    [data-testid="stSidebar"] .element-container {
+        padding-bottom: 0.35rem;
     }
 
     /* Cards */
     .mc-card {
-        background-color: rgba(255, 255, 255, 0.85);
+        background-color: rgba(255, 255, 255, 0.9);
         border-radius: 18px;
         padding: 1rem 1.2rem;
         box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
@@ -268,7 +299,7 @@ st.markdown(
 
     .mc-muted {
         color: #4b5563;
-        font-size: 0.82rem;
+        font-size: 0.86rem;
     }
 
     .mc-chip {
@@ -278,10 +309,14 @@ st.markdown(
         border-radius: 999px;
         background-color: #fee2e2;
         color: #b91c1c;
-        font-size: 0.75rem;
+        font-size: 0.78rem;
         font-weight: 600;
         margin-right: 0.3rem;
         margin-bottom: 0.2rem;
+    }
+
+    h2, h3, h4 {
+        letter-spacing: 0.01em;
     }
     </style>
     """,
@@ -289,20 +324,139 @@ st.markdown(
 )
 
 # =========================================================
+# Sidebar – Language, navigation & filters
+# =========================================================
+
+# Language selector
+lang_label = st.sidebar.selectbox(
+    "Language / ቋንቋ",
+    ["English", "Amharic (አማርኛ)"],
+)
+lang_code = "am" if "Amharic" in lang_label else "en"
+st.session_state["lang"] = lang_code
+
+def tr(en: str, am: str) -> str:
+    """Re-declare to ensure it picks current lang_code in session."""
+    return am if lang_code == "am" else en
+
+st.sidebar.title(tr("MyCanada Controls", "MyCanada መቆጣጠሪያዎች"))
+
+# Page definitions (codes so we can translate labels safely)
+PAGE_DEFS = [
+    {
+        "code": "assistant",
+        "icon": "🤖",
+        "label_en": "Ask the Newcomer Assistant",
+        "label_am": "ከአዲስ መጡ አጋዥ ጠይቅ",
+    },
+    {
+        "code": "cities",
+        "icon": "🏙️",
+        "label_en": "Explore Cities & Provinces",
+        "label_am": "ከተሞችን እና ክፍለ አካባቢዎችን ተመልከት",
+    },
+    {
+        "code": "bank",
+        "icon": "🏦",
+        "label_en": "Open a Bank Account",
+        "label_am": "የባንክ መለያ ክፈት",
+    },
+    {
+        "code": "housing",
+        "icon": "🏡",
+        "label_en": "Housing Search",
+        "label_am": "የቤት መፈለጊያ",
+    },
+    {
+        "code": "employment",
+        "icon": "💼",
+        "label_en": "Employment Services",
+        "label_am": "የስራ አገልግሎቶች",
+    },
+    {
+        "code": "worship",
+        "icon": "🛕",
+        "label_en": "Places of Worship",
+        "label_am": "የመሰገና ቤቶች",
+    },
+    {
+        "code": "food",
+        "icon": "🥘",
+        "label_en": "Food & Cultural Community Support",
+        "label_am": "ምግብ እና የባህል ድጋፍ",
+    },
+    {
+        "code": "guides",
+        "icon": "📚",
+        "label_en": "Immigration Guides",
+        "label_am": "የመግቢያ መመሪያዎች",
+    },
+    {
+        "code": "about",
+        "icon": "ℹ️",
+        "label_en": "About this App",
+        "label_am": "ስለዚህ መተግበሪያ",
+    },
+]
+
+st.sidebar.subheader(tr("Mode", "ዘዴ"))
+
+page_index = st.sidebar.radio(
+    tr("Choose what you want to explore:", "ምን መፈለግ ትፈልጋለህ?"),
+    options=list(range(len(PAGE_DEFS))),
+    format_func=lambda i: f"{PAGE_DEFS[i]['icon']} "
+                          f"{PAGE_DEFS[i]['label_am'] if lang_code == 'am' else PAGE_DEFS[i]['label_en']}",
+)
+page_code = PAGE_DEFS[page_index]["code"]
+
+st.sidebar.markdown("---")
+st.sidebar.subheader(tr("Quick filters (optional)", "ፈጣን ማጣፈጫዎች (በፈቃድ)"))
+
+preferred_region = st.sidebar.multiselect(
+    tr("Preferred region(s) in Canada", "በካናዳ ውስጥ የሚመሩት ክልል(ሎች)"),
+    options=["Atlantic", "Central", "Prairies", "West Coast", "North"],
+    help=tr(
+        "Used as soft filters when browsing cities.",
+        "ከተሞችን ሲመለከቱ እንደ ቀላል ማጣፈጫ ይጠቀማሉ።",
+    ),
+)
+
+family_friendly = st.sidebar.checkbox(
+    tr(
+        "Show cities with strong family/newcomer support",
+        "በቤተሰብ እና አዲስ መጡ ድጋፍ ጠንካራ ያሉ ከተሞችን አሳይ",
+    ),
+    value=False,
+)
+
+st.sidebar.markdown("---")
+st.sidebar.caption(
+    tr(
+        "Built with ❤️ by Zalates Analytics as a learning & onboarding assistant for newcomers.",
+        "ይህ መተግበሪያ በ Zalates Analytics ለአዲስ መጡ ሰዎች እንደ መማርያና መመሪያ አጋዥ ተገንብቷል።",
+    )
+)
+
+# =========================================================
 # Header / Hero
 # =========================================================
 
 st.markdown(
-    """
+    f"""
     <div class="mc-hero">
-        <h1>MyCanada – Newcomer AI Assistant 🍁</h1>
-        <p>Zalates Analytics – AI Data-Cleaning, Integration & Insight Dashboard for newcomers.<br>
-        Unify messy information, reduce confusion, and explore warm fall-coloured dashboards 
-        for immigration, settlement, and city choices.</p>
+        <h1>{tr("MyCanada – Newcomer AI Assistant 🍁", "MyCanada – ለአዲስ መጡ የኤይአይ አጋዥ 🍁")}</h1>
+        <p>{tr(
+            "Zalates Analytics – AI Data-Cleaning, Integration & Insight Dashboard for newcomers.",
+            "Zalates Analytics – ለአዲስ መጡ ሰዎች የመረጃ ማጽዳት፣ ማዋሃድ እና ማብራሪያ ዳሽቦርድ።"
+        )}<br>
+        {tr(
+            "Unify messy information, reduce confusion, and explore warm fall-coloured dashboards for immigration, settlement, and city choices.",
+            "የተበታተነ መረጃ ያንዱን ያድርጉ፣ ውርጭነትን አቀንሱ፣ ስለ መግቢያ፣ መቀመጫ እና የከተሞች ምርጫ ቀለማቸው ሞቃት ዳሽቦርዶችን ያስሱ።"
+        )}</p>
         <div style="margin-top:0.4rem;">
-            <span class="mc-pill">Immigration basics</span>
-            <span class="mc-pill">City & province explorer</span>
-            <span class="mc-pill">First weeks in Canada</span>
+            <span class="mc-pill">{tr("Immigration basics", "የመግቢያ መሠረታዊ መረጃ")}</span>
+            <span class="mc-pill">{tr("City & province explorer", "ከተሞችንና ክልሎችን መመርመሪያ")}</span>
+            <span class="mc-pill">{tr("First weeks in Canada", "በካናዳ የመጀመሪያ ሳምንቶች")}</span>
         </div>
     </div>
     """,
@@ -310,66 +464,22 @@ st.markdown(
 )
 
 st.caption(
-    "⚠️ This assistant is for general information only. It does **not** replace legal or immigration advice. "
-    "Always verify details on official Government of Canada / IRCC websites."
-)
-
-# =========================================================
-# Sidebar – Data inputs, language & navigation
-# =========================================================
-
-st.sidebar.title("MyCanada Controls")
-
-language = st.sidebar.selectbox(
-    "Language / ቋንቋ",
-    ["English", "Amharic (አማርኛ)"],
-)
-
-st.sidebar.subheader("Mode")
-page = st.sidebar.radio(
-    "Choose what you want to explore:",
-    [
-        "🤖 Ask the Newcomer Assistant",
-        "🏙️ Explore Cities & Provinces",
-        "🏦 Open a Bank Account",
-        "🏡 Housing Search",
-        "💼 Employment Services",
-        "🛕 Places of Worship",
-        "🥘 Food & Cultural Community Support",
-        "📚 Immigration Guides",
-        "ℹ️ About this App",
-    ],
-)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Quick filters (optional)")
-
-preferred_region = st.sidebar.multiselect(
-    "Preferred region(s) in Canada",
-    options=["Atlantic", "Central", "Prairies", "West Coast", "North"],
-    help="Used as soft filters when browsing cities.",
-)
-
-family_friendly = st.sidebar.checkbox(
-    "Show cities with strong family/newcomer support",
-    value=False,
-)
-
-st.sidebar.markdown("---")
-st.sidebar.caption(
-    "Built with ❤️ by Zalates Analytics as a learning & onboarding assistant for newcomers."
+    tr(
+        "⚠️ This assistant is for general information only. It does **not** replace legal or immigration advice. Always verify details on official Government of Canada / IRCC websites.",
+        "⚠️ ይህ አጋዥ በአጠቃላይ መረጃ ለመርዳት ብቻ ነው። የሕግ ወይም የመግቢያ ምክርን አይተካም። መረጃውን ሁልጊዜ ከመንግስት የካናዳ / IRCC ድህረገፄ ጋር ያረጋግጡ።",
+    )
 )
 
 # =========================================================
 # Page 1 – Ask the assistant (FAQ-style QA with AI)
 # =========================================================
 
-if page == "🤖 Ask the Newcomer Assistant":
-    if "Amharic" in language:
-        st.subheader("ከ MyCanada አዲስ መጣ ኤይአይ አስስታንት ጋር ጠይቅ")
+if page_code == "assistant":
+    if lang_code == "am":
+        st.subheader("ከ MyCanada አዲስ መጡ ኤይአይ አጋዥ ጋር ጠይቅ")
         question_label = "ስለ ካናዳ መግባት ወይም መቀመጥ ጥያቄህን እዚህ ጻፍ፦"
-        question_ph = "ለምሳሌ፡ የንባብ ፈቃድ እንዴት እሰራ? ለ Express Entry የሥራ ስምሪት አስፈላጊ ነው?"
-        ask_label = "ከ MyCanada አስስታንት ጠይቅ"
+        question_ph = "ለምሳሌ፡ የንባብ ፈቃድ እንዴት እጠይቃለሁ? ለ Express Entry የሥራ ስምሪት አስፈላጊ ነው?"
+        ask_label = "ከ MyCanada አጋዥ ጠይቅ"
     else:
         st.subheader("Ask the Newcomer Assistant")
         question_label = "Type your question about coming to or settling in Canada:"
@@ -388,15 +498,15 @@ if page == "🤖 Ask the Newcomer Assistant":
         ask = st.button(ask_label)
 
     with col_info:
-        if "Amharic" in language:
+        if lang_code == "am":
             st.markdown(
                 """
                 <div class="mc-card">
                     <strong>ጠቃሚ መመሪያዎች</strong>
                     <ul style="padding-left:1.1rem;margin-top:0.4rem;">
-                        <li>አንድ ዋና ጥያቄ ብቻ ለያይ።</li>
-                        <li>ተማሪ፣ ሰራተኛ ወይም እስር የፈጠረብህ መሆንህን ይግለጹ።</li>
-                        <li>ሁልጊዜ ከመንግስት የካናዳ / IRCC ድህረገፅ ጋር ያረጋግጡ።</li>
+                        <li>አንድ ዋና ጥያቄ ብቻ ጠይቅ።</li>
+                        <li>ተማሪ፣ ሰራተኛ ወይም እስር ተጠያቂ መሆንህን ግለጽ።</li>
+                        <li>ሁልጊዜ ከ IRCC የመንግስት ድህረገፆች ጋር ያረጋግጡ።</li>
                     </ul>
                 </div>
                 """,
@@ -421,16 +531,16 @@ if page == "🤖 Ask the Newcomer Assistant":
         faq, score = best_faq_match(user_question)
 
         # Try AI first
-        ai_answer, ai_error = generate_ai_answer(user_question, faq, language)
+        ai_answer, ai_error = generate_ai_answer(user_question, faq, lang_code)
 
-        if "Amharic" in language:
+        if lang_code == "am":
             st.markdown("### 🗣️ ጥያቄህ")
         else:
             st.markdown("### 🗣️ Your question")
         st.write(user_question)
 
-        if "Amharic" in language:
-            st.markdown("### 🤖 መልስ ከ MyCanada አስስታንት")
+        if lang_code == "am":
+            st.markdown("### 🤖 መልስ ከ MyCanada አጋዥ")
         else:
             st.markdown("### 🤖 Assistant answer")
 
@@ -449,17 +559,19 @@ if page == "🤖 Ask the Newcomer Assistant":
                     )
             else:
                 st.warning(
-                    "I could not find a close match in my current FAQ data. "
-                    "Try rephrasing your question or selecting a guide on the **Immigration Guides** page."
+                    tr(
+                        "I could not find a close match in my current FAQ data. Try rephrasing your question or selecting a guide on the **Immigration Guides** page.",
+                        "በአሁኑ ያሉ የFAQ መረጃዬ ውስጥ ተመሳሳይ ጥያቄ ማግኘት አልቻልኩም። ጥያቄዎን  занንሱ ወይም በ“የመግቢያ መመሪያዎች” ገጽ ላይ መመሪያ ይምረጡ።",
+                    )
                 )
 
         # Transparency: show matched FAQ
         if faq:
-            if "Amharic" in language:
+            if lang_code == "am":
                 st.markdown("### 🔍 በጣም ተመሳሳይ የተገኘው FAQ")
             else:
                 st.markdown("### 🔍 Closest matched FAQ (for transparency)")
-            with st.expander("Show matched FAQ"):
+            with st.expander(tr("Show matched FAQ", "ተመሳሳይ FAQ አሳይ")):
                 st.write(f"**Matched question (similarity: {score:.2f})**")
                 st.write(faq.get("question", ""))
 
@@ -468,8 +580,8 @@ if page == "🤖 Ask the Newcomer Assistant":
 # Page 2 – City & Province explorer
 # =========================================================
 
-elif page == "🏙️ Explore Cities & Provinces":
-    st.subheader("🏙️ Explore Cities & Provinces")
+elif page_code == "cities":
+    st.subheader(tr("🏙️ Explore Cities & Provinces", "🏙️ ከተሞችን እና ክፍለ አካባቢዎችን ተመልከት"))
 
     if not cities:
         st.error("No city data available. Please check `data/cities.json`.")
@@ -479,12 +591,12 @@ elif page == "🏙️ Explore Cities & Provinces":
 
         with col_filters:
             province_choice = st.selectbox(
-                "Select a province or territory",
+                tr("Select a province or territory", "ክፍለ አካባቢ ወይም ከተማ ይምረጡ"),
                 options=["(all)"] + provinces,
             )
 
             settlement_focus = st.multiselect(
-                "What matters most to you?",
+                tr("What matters most to you?", "ለእርስዎ በጣም የሚነጥቀው ምንድን ነው?"),
                 options=[
                     "Affordability",
                     "Jobs & economy",
@@ -512,18 +624,26 @@ elif page == "🏙️ Explore Cities & Provinces":
                 filtered = [c for c in filtered if c.get("family_friendly", False)]
 
             st.markdown(
-                f"Showing **{len(filtered)}** city(ies) that match your filters."
+                tr(
+                    f"Showing **{len(filtered)}** city(ies) that match your filters.",
+                    f"ከማጣፈጫዎችዎ ጋር ተስማሚ **{len(filtered)}** ከተሞችን እያሳየ ነው።",
+                )
             )
 
             if not filtered:
-                st.info("Try removing some filters to see more cities.")
+                st.info(
+                    tr(
+                        "Try removing some filters to see more cities.",
+                        "ተጨማሪ ከተሞች ለማየት አንዳንድ ማጣፈጫዎችን ያስወግዱ።",
+                    )
+                )
             else:
                 for city in filtered:
-                    name = city.get("name")
+                    name = translate_dynamic(city, "name") or city.get("name")
                     prov = city.get("province")
-                    region_label = city.get("region_label", "")
-                    summary = city.get("summary", "")
-                    newcomers = city.get("newcomer_support", "")
+                    region_label = translate_dynamic(city, "region_label")
+                    summary = translate_dynamic(city, "summary")
+                    newcomers = translate_dynamic(city, "newcomer_support")
                     key_sectors = city.get("key_sectors", [])
                     cost_level = city.get("cost_of_living", "Unknown")
                     transit = city.get("transit", "Unknown")
@@ -534,10 +654,10 @@ elif page == "🏙️ Explore Cities & Provinces":
                             <h3 style="margin-bottom:0.1rem;">{name}, {prov}</h3>
                             <p class="mc-muted" style="margin-top:0.1rem;">{region_label}</p>
                             <p style="margin-top:0.4rem;">{summary}</p>
-                            <p><strong>Newcomer services:</strong> {newcomers}</p>
+                            <p><strong>{tr("Newcomer services:", "የአዲስ መጡ አገልግሎቶች፦")}</strong> {newcomers}</p>
                             <p>
-                                <strong>Cost of living:</strong> {cost_level} &nbsp; • &nbsp;
-                                <strong>Transit:</strong> {transit}
+                                <strong>{tr("Cost of living:", "የኑሮ ወጪ፦")}</strong> {cost_level} &nbsp; • &nbsp;
+                                <strong>{tr("Transit:", "ትራንስፖርት፦")}</strong> {transit}
                             </p>
                             <p>
                                 {"".join(f'<span class="mc-pill">{sec}</span>' for sec in key_sectors)}
@@ -551,44 +671,86 @@ elif page == "🏙️ Explore Cities & Provinces":
 # Page 3 – Open a Bank Account
 # =========================================================
 
-elif page == "🏦 Open a Bank Account":
-    st.subheader("🏦 Open a Bank Account in Canada")
+elif page_code == "bank":
+    st.subheader(tr("🏦 Open a Bank Account in Canada", "🏦 በካናዳ ውስጥ የባንክ መለያ መክፈት"))
 
-    st.markdown(
-        """
-        Opening a bank account early helps you **receive your salary, pay rent, and build credit**.
-        Let’s go through the key steps together.
-        """
-    )
+    if lang_code == "am":
+        st.markdown(
+            """
+            ባንክ መለያ መክፈት የክፍያ፣ የደመወዝ መቀበያ እና የክሬዲት ታሪክ ለመጀመር በጣም አስፈላጊ ነው።
+            ከታች ዋና እርምጃዎችን በቀላሉ ተከትሉ።
+            """
+        )
+    else:
+        st.markdown(
+            """
+            Opening a bank account early helps you **receive your salary, pay rent, and build credit**.
+            Let’s go through the key steps together.
+            """
+        )
 
     location = st.text_input(
-        "Where are you right now? (city or postal code)",
-        placeholder="e.g., Toronto, ON or M5V 2T6",
+        tr(
+            "Where are you right now? (city or postal code)",
+            "አሁን የምትገኙበት ከተማ ወይም ፖስታ ኮድ ያስገቡ፦",
+        ),
+        placeholder=tr("e.g., Toronto, ON or M5V 2T6", "ለምሳሌ፡ Toronto, ON ወይም M5V 2T6"),
     )
-
-    st.markdown("### 1. Key steps to open a basic chequing account")
 
     st.markdown(
-        """
-        1. **Choose a bank and account type** (e.g., newcomer chequing account, student account).  
-        2. **Prepare your documents** (usually 2 pieces of ID):  
-           - Passport  
-           - Study permit / work permit / PR card  
-           - Proof of address (rental agreement, utility bill, official letter)  
-           - SIN (if you have it – not required to open an account, but often requested)  
-        3. **Book an appointment or walk in** to a branch.  
-        4. **Meet with a banking advisor** – they verify your ID, open your account, and give you a debit card.  
-        5. **Set up online & mobile banking**, e-Transfers, and alerts.  
-        6. (Optional) Ask about **credit card**, **overdraft**, and **newcomer welcome offers**.
-        """
+        tr(
+            "### 1. Key steps to open a basic chequing account",
+            "### 1፡ መሰረታዊ የቻክ መለያ ለመክፈት ዋና እርምጃዎች",
+        )
     )
 
-    st.markdown("### 2. Newcomer banking programs (Big 5 banks)")
+    if lang_code == "am":
+        st.markdown(
+            """
+            1. **ባንክ እና የመለያ አይነት ይምረጡ** (የአዲስ መጡ መለያ፣ የተማሪ መለያ ወዘተ)  
+            2. **የመለያ ሰነዶችዎን ያዘጋጁ** (ብዙውን ጊዜ 2 መለያ ያስፈልጋል):  
+               - ፓስፖርት  
+               - የንባብ / የስራ ፈቃድ ወይም የPR ካርድ  
+               - የአድራሻ ማረጋገጫ (የኪራይ ስምሪት፣ የመመለሻ ደብዳቤ ወዘተ)  
+               - SIN (ካለዎት – መለያ ለመክፈት ግዴታ የለውም ግን ብዙ ጊዜ ይጠየቃል)  
+            3. **ቅጽ ሙሉ ወይም በቅድሚያ ቀጠሮ ይያዙ** እና ወደ ቅርብ ቅርንጫፍ ይሂዱ።  
+            4. **ከባንክ ባለሙያ ጋር ይወያዩ** – መለያውን ይክፈቱልዎታል እና የዴቢት ካርድ ይሰጡዎታል።  
+            5. **ኦንላይን እና ሞባይል ባንክንግ ያበሩ**፣ e-Transfer እና መረጃ መጠንቀቂያዎችን ይቀናብሩ።  
+            6. (በፈቃድ) ስለ **ክሬዲት ካርድ፣ ባንክ መታወክ (overdraft) እና የአዲስ መጡ ስፔሻል ፓኬጅ** ይጠይቁ።
+            """
+        )
+    else:
+        st.markdown(
+            """
+            1. **Choose a bank and account type** (e.g., newcomer chequing account, student account).  
+            2. **Prepare your documents** (usually 2 pieces of ID):  
+               - Passport  
+               - Study permit / work permit / PR card  
+               - Proof of address (rental agreement, utility bill, official letter)  
+               - SIN (if you have it – not required to open an account, but often requested)  
+            3. **Book an appointment or walk in** to a branch.  
+            4. **Meet with a banking advisor** – they verify your ID, open your account, and give you a debit card.  
+            5. **Set up online & mobile banking**, e-Transfers, and alerts.  
+            6. (Optional) Ask about **credit card**, **overdraft**, and **newcomer welcome offers**.
+            """
+        )
 
-    st.info(
-        "Most major banks have **newcomer packages** with no-fee accounts for 6–12 months, "
-        "free international transfers, or cash bonuses. Always check the latest details on their websites."
+    st.markdown(
+        tr(
+            "### 2. Newcomer banking programs (Big 5 banks)",
+            "### 2. ለአዲስ መጡ የባንክ ፕሮግራሞች (Big 5 ባንኮች)",
+        )
     )
+
+    if lang_code == "am":
+        st.info(
+            "ብዙ ታላላቅ ባንኮች ለአዲስ መጡ የሚሰጡ ፓኬጅዎች አሏቸው (ነፃ ክፍያ ያለው መለያ፣ ነጻ ስርዓተ-ገንዘብ ማስተላለፊያ ወዘተ)። ዝርዝሮችን በባንኩ ድህረገፅ ላይ ያረጋግጡ።"
+        )
+    else:
+        st.info(
+            "Most major banks have **newcomer packages** with no-fee accounts for 6–12 months, "
+            "free international transfers, or cash bonuses. Always check the latest details on their websites."
+        )
 
     bank_links = {
         "RBC – Newcomers to Canada": "https://www.rbc.com/newcomers",
@@ -601,10 +763,13 @@ elif page == "🏦 Open a Bank Account":
     for label, url in bank_links.items():
         st.markdown(f"- [{label}]({url})")
 
-    st.markdown("### 3. Find branches near you")
+    st.markdown(tr("### 3. Find branches near you", "### 3. ቅርብ ያሉ የባንክ ቅርንጫፎችን ያግኙ"))
 
     if location.strip():
-        st.success("Here are quick links to find branches close to you on Google Maps:")
+        if lang_code == "am":
+            st.success("በእርስዎ አካባቢ ያሉ ባንኮችን ለመፈለግ የ Google Maps አገናኞች፦")
+        else:
+            st.success("Here are quick links to find branches close to you on Google Maps:")
 
         banks = ["RBC", "TD Bank", "Scotiabank", "CIBC", "BMO Bank of Montreal"]
 
@@ -614,47 +779,65 @@ elif page == "🏦 Open a Bank Account":
             st.markdown(f"- [{b} near {location}]({url})")
 
         st.caption(
-            "Tip: When you open the map, you’ll see **distance, directions, opening hours, and phone numbers**."
+            tr(
+                "Tip: When you open the map, you’ll see **distance, directions, opening hours, and phone numbers**.",
+                "ምክር፦ ካርታውን ሲከፍቱ **ርቀት፣ አቅጣጫ፣ የመክፈቻ ሰዓቶች እና ስልክ ቁጥሮችን** ታያላችሁ።",
+            )
         )
     else:
-        st.warning("Please type your city or postal code above so I can suggest nearby branches.")
+        st.warning(
+            tr(
+                "Please type your city or postal code above so I can suggest nearby branches.",
+                "እባክዎን ከላይ ከተማዎን ወይም ፖስታ ኮድዎን ያስገቡ እና ቅርብ ያሉ ባንኮችን እንዲጠቁምልዎ።",
+            )
+        )
 
 # =========================================================
 # Page 4 – Housing Search
 # =========================================================
 
-elif page == "🏡 Housing Search":
-    st.subheader("🏡 Rental Housing for Newcomers")
+elif page_code == "housing":
+    st.subheader(tr("🏡 Rental Housing for Newcomers", "🏡 ለአዲስ መጡ ሰዎች የኪራይ ቤት መፈለጊያ"))
 
-    st.markdown(
-        "Let’s explore rental options based on your **city, budget, and type of place**."
+    if lang_code == "am":
+        st.markdown(
+            "ለኪራይ ቤት መፈለግ በተለይ በመጀመሪያ ወራቶች እየተባበረ ይሰማል። ከተማ፣ በጀት እና የቤት አይነት መሰረት በመጠቀም እንጀምር።"
+        )
+    else:
+        st.markdown(
+            "Let’s explore rental options based on your **city, budget, and type of place**."
+        )
+
+    city = st.text_input(
+        tr("Preferred city", "የሚመርጡት ከተማ"),
+        placeholder=tr("e.g., Ottawa, ON", "ለምሳሌ፡ Ottawa, ON"),
     )
-
-    city = st.text_input("Preferred city", placeholder="e.g., Ottawa, ON")
     budget = st.slider(
-        "Approximate monthly budget (CAD)",
+        tr("Approximate monthly budget (CAD)", "በወር የሚመረጥ በጀት (በዶላር)"),
         min_value=500,
         max_value=4000,
         value=1800,
         step=50,
     )
     accom_type = st.selectbox(
-        "Type of accommodation",
+        tr("Type of accommodation", "የቤት አይነት"),
         [
-            "Any",
-            "Room in shared house",
-            "Bachelor / studio",
-            "1-bedroom apartment",
-            "2-bedroom apartment",
-            "Family-size house / townhouse",
+            tr("Any", "ማንኛውም"),
+            tr("Room in shared house", "በተካፋይ ቤት ውስጥ ክፍል"),
+            tr("Bachelor / studio", "ባችለር / ስቱዲዮ"),
+            tr("1-bedroom apartment", "1 መኝታ አፓርታማ"),
+            tr("2-bedroom apartment", "2 መኝታ አፓርታማ"),
+            tr("Family-size house / townhouse", "ለቤተሰብ አይነት ቤት / ታውንሃውስ"),
         ],
     )
 
     if city.strip():
-        st.markdown("### 1. Search rental listings (trusted platforms)")
+        st.markdown(tr("### 1. Search rental listings (trusted platforms)", "### 1. የኪራይ ቤቶች ማግኘት (ታማኝ መስኮቶች)"))
 
         city_q = city.strip()
-        search_phrase = f"rent {accom_type} {city_q}" if accom_type != "Any" else f"rent apartment {city_q}"
+        # Use a simple English search phrase for external sites
+        accom_search = "Any" if "ማንኛውም" in accom_type else accom_type
+        search_phrase = f"rent {accom_search} {city_q}" if "Any" not in accom_search else f"rent apartment {city_q}"
 
         links = {
             "Rentals.ca": google_search_url(f"site:rentals.ca {search_phrase}"),
@@ -667,63 +850,100 @@ elif page == "🏡 Housing Search":
         for label, url in links.items():
             st.markdown(f"- [{label} – search for **{city_q}**]({url})")
 
-        st.markdown("### 2. Neighbourhood & rent guidance (approximate)")
+        st.markdown(tr("### 2. Neighbourhood & rent guidance (approximate)", "### 2. ማህበረሰብ እና የኪራይ መጠን (በግምት)"))
 
         low = max(400, budget - 400)
         mid_low = max(500, budget - 200)
         mid_high = budget + 200
         high = budget + 500
 
-        st.markdown(
-            f"""
-            These are **very rough ranges** you might see in many Canadian cities.  
-            Actual prices vary a lot by city and neighbourhood:
+        if lang_code == "am":
+            st.markdown(
+                f"""
+                እነዚህ የቤት ኪራይ የሚገኙት መጠኖች በብዙ ከተሞች ውስጥ በግምት ናቸው።  
+                በእውነቱ መጠኖች በከተማ እና በማዕከል ይለያያሉ፦
 
-            - **Budget / shared options**: ~${low}–${mid_low} / month  
-            - **Typical 1-bedroom**: ~${mid_low}–${mid_high} / month  
-            - **Larger family units**: ~${mid_high}–${high}+ / month  
+                - **በጣም ዝቅተኛ / ተካፋይ አማራጮች**፡ በወር ግምት ~${low}–${mid_low}  
+                - **መደበኛ 1-መኝታ**፡ ~${mid_low}–${mid_high}  
+                - **ትልቅ የቤተሰብ መኖሪያ**፡ ~${mid_high}–${high}+  
 
-            Use these numbers only as a **starting point**, and always confirm with the actual listing.
-            """
-        )
+                እነዚህን ቁጥሮች እንደ መጀመሪያ መመሪያ ብቻ ይጠቀሙ።
+                """
+            )
+        else:
+            st.markdown(
+                f"""
+                These are **very rough ranges** you might see in many Canadian cities.  
+                Actual prices vary a lot by city and neighbourhood:
 
-        st.markdown("### 3. Transit & commute tips")
+                - **Budget / shared options**: ~${low}–${mid_low} / month  
+                - **Typical 1-bedroom**: ~${mid_low}–${mid_high} / month  
+                - **Larger family units**: ~${mid_high}–${high}+ / month  
 
-        st.info(
-            "When checking a listing, open it in Google Maps and look for:\n"
-            "- Distance to your school / workplace\n"
-            "- Bus / subway / LRT lines nearby\n"
-            "- Travel time during rush hour\n"
-            "- Walking distance to grocery stores and pharmacies"
-        )
+                Use these numbers only as a **starting point**, and always confirm with the actual listing.
+                """
+            )
+
+        st.markdown(tr("### 3. Transit & commute tips", "### 3. የትራንስፖርት እና ስራ መጓጓዣ ምክሮች"))
+
+        if lang_code == "am":
+            st.info(
+                "የቤት ማስታወቂያን ሲመለከቱ በ Google Maps ላይ ይክፈቱ እና ይመልከቱ፦\n"
+                "- ከስራዎ ወይም ትምህርት ቤትዎ ርቀት\n"
+                "- ቅርብ ያሉ አውቶቡስ / ሜትሮ መስመሮች\n"
+                "- በጅምላ ሰዓት የጉዞ ጊዜ\n"
+                "- ወደ ሱፐርማርኬት እና መድሀኒት ቤት የሚሆን መራመድ ርቀት"
+            )
+        else:
+            st.info(
+                "When checking a listing, open it in Google Maps and look for:\n"
+                "- Distance to your school / workplace\n"
+                "- Bus / subway / LRT lines nearby\n"
+                "- Travel time during rush hour\n"
+                "- Walking distance to grocery stores and pharmacies"
+            )
     else:
-        st.warning("Please enter a city so I can tailor housing search links for you.")
+        st.warning(
+            tr(
+                "Please enter a city so I can tailor housing search links for you.",
+                "እባክዎን ከተማ ያስገቡ እንዲሁም ለእርስዎ ተስማሚ የቤት መፈለጊያ አገናኞችን እንድሰጥዎ።",
+            )
+        )
 
 # =========================================================
 # Page 5 – Employment Services
 # =========================================================
 
-elif page == "💼 Employment Services":
-    st.subheader("💼 Find Jobs & Employment Support")
+elif page_code == "employment":
+    st.subheader(tr("💼 Find Jobs & Employment Support", "💼 ስራ እና የስራ ድጋፍ ፈልግ"))
 
-    st.markdown(
-        "Let’s search for jobs and newcomer employment services that match your goals."
-    )
+    if lang_code == "am":
+        st.markdown("የስራ ፍለጋ እና የአዲስ መጡ የስራ ማስተላለፊያ አገልግሎቶችን እንጀምር።")
+    else:
+        st.markdown(
+            "Let’s search for jobs and newcomer employment services that match your goals."
+        )
 
     job_title = st.text_input(
-        "What type of job are you looking for?",
-        placeholder="e.g., Data analyst, PSW, warehouse worker, cashier",
+        tr(
+            "What type of job are you looking for?",
+            "ምን ዓይነት ስራ እየፈለጉ ነው?",
+        ),
+        placeholder=tr(
+            "e.g., Data analyst, PSW, warehouse worker, cashier",
+            "ለምሳሌ፡ Data analyst, PSW, warehouse worker, cashier",
+        ),
     )
     job_city = st.text_input(
-        "Preferred city or region for work",
-        placeholder="e.g., Toronto, ON or Calgary, AB",
+        tr("Preferred city or region for work", "ስራ ለማግኘት የሚመርጡት ከተማ / ክልል"),
+        placeholder=tr("e.g., Toronto, ON or Calgary, AB", "ለምሳሌ፡ Toronto, ON ወይም Calgary, AB"),
     )
 
     if job_title.strip() and job_city.strip():
         q_job = job_title.strip()
         q_city = job_city.strip()
 
-        st.markdown("### 1. Job postings on trusted Canadian platforms")
+        st.markdown(tr("### 1. Job postings on trusted Canadian platforms", "### 1. በታማኝ የካናዳ መድረኮች ላይ ስራ ፍለጋ"))
 
         indeed_url = f"https://ca.indeed.com/jobs?q={quote_plus(q_job)}&l={quote_plus(q_city)}"
         jobbank_url = (
@@ -739,221 +959,320 @@ elif page == "💼 Employment Services":
         st.markdown(f"- [Job Bank – {q_job} in {q_city}]({jobbank_url})")
         st.markdown(f"- [LinkedIn Jobs – {q_job} in {q_city}]({linkedin_url})")
 
-        st.markdown("### 2. Match & relevance (how to judge a good posting)")
+        st.markdown(tr("### 2. Match & relevance (how to judge a good posting)", "### 2. ስራው እንደሚመስል መገመት"))
 
-        st.info(
-            "Look for:\n"
-            "- Job title and duties similar to your skills\n"
-            "- Required experience close to your background\n"
-            "- Location and work arrangement (on-site / hybrid / remote)\n"
-            "- Salary range that fits your expectations\n"
-            "- Employer offering training or support for newcomers"
-        )
+        if lang_code == "am":
+            st.info(
+                "እነዚህን ነጥቦች ይመልከቱ፦\n"
+                "- የስራ ርዕስና ተግባር ከክህሎትዎ ጋር እንዲመጣ\n"
+                "- የተፈለገው ልምድ ቅርብ እንዲሆን\n"
+                "- ቦታ እና የስራ አይነት (on-site / hybrid / remote)\n"
+                "- ደመወዝ ከመጠባበቂያዎ ጋር እንዲስማማ\n"
+                "- ለአዲስ መጡ ድጋፍ የሚሰጥ ተቋም መሆን"
+            )
+        else:
+            st.info(
+                "Look for:\n"
+                "- Job title and duties similar to your skills\n"
+                "- Required experience close to your background\n"
+                "- Location and work arrangement (on-site / hybrid / remote)\n"
+                "- Salary range that fits your expectations\n"
+                "- Employer offering training or support for newcomers"
+            )
 
-        st.markdown("### 3. Newcomer employment centres near you")
+        st.markdown(tr("### 3. Newcomer employment centres near you", "### 3. ቅርብ ያሉ የአዲስ መጡ የስራ ማዕከላት"))
 
         newcomer_query = f"employment services for newcomers near {q_city}"
         newcomer_url = maps_search_url(newcomer_query)
 
         st.markdown(
-            f"- [Newcomer employment & settlement services near {q_city}]({newcomer_url})"
+            f"- [{tr('Newcomer employment & settlement services near', 'አዲስ መጡ የስራ እና መቀመጫ አገልግሎቶች ቅርብ ከ')}"
+            f" {q_city}]({newcomer_url})"
         )
         st.caption(
-            "These can include YMCA, COSTI, ACCES Employment, immigrant settlement agencies, "
-            "and community organizations that help with resumes, networking, and interview practice."
+            tr(
+                "These can include YMCA, COSTI, ACCES Employment, immigrant settlement agencies, and community organizations that help with resumes, networking, and interview practice.",
+                "ይህ የሚለው YMCA፣ COSTI፣ ACCES Employment፣ የመግቢያ ማዕከላትንና ሌሎች የማህበረሰብ ተቋማትን ሊያካትት ይችላል፣ ሪዙሜ፣ ኔትዎርኪንግ እና ቃለ መጠይቅ ለማሰልጠን ይረዳሉ።",
+            )
         )
 
-        st.markdown("### 4. Resume & interview tips (tailored to your role)")
+        st.markdown(tr("### 4. Resume & interview tips (tailored to your role)", "### 4. ለሪዙሜ እና ለቃለ መጠይቅ ምክሮች"))
 
-        st.write(
-            f"For **{q_job}** roles, try to:\n"
-            "- Highlight your most recent **work experience** that matches the job duties\n"
-            "- Use **Canadian-style resume format** (1–2 pages, no photo, clear bullet points)\n"
-            "- Add **quantified results** (e.g., 'reduced processing time by 20%') where possible\n"
-            "- Practice answers to common questions such as:\n"
-            "  - 'Tell me about yourself'\n"
-            "  - 'Why do you want this role?'\n"
-            "  - 'Tell me about a time you solved a problem at work'\n"
-        )
+        if lang_code == "am":
+            st.write(
+                f"ለ **{q_job}** የሚመሩ ስራዎች፦\n"
+                "- ከስራ ልምድዎ ጋር ተመሳሳይ የሆኑ ተግባራትን በግልፅ ያመልክቱ\n"
+                "- አንድ ወይም ሁለት ገጽ ያለው የካናዳ ዓይነት ሪዙሜ ይጠቀሙ\n"
+                "- ውጤቶችን በቁጥር ያመልክቱ (ለምሳሌ፡ “አስራ 20% ጊዜ ቀነሰ”) \n"
+                "- የተለመዱ ጥያቄዎችን ተመልሰው ይለማመዱ፦ 'ስለራስህ ተናገር' ወዘተ"
+            )
+        else:
+            st.write(
+                f"For **{q_job}** roles, try to:\n"
+                "- Highlight your most recent **work experience** that matches the job duties\n"
+                "- Use **Canadian-style resume format** (1–2 pages, no photo, clear bullet points)\n"
+                "- Add **quantified results** (e.g., 'reduced processing time by 20%') where possible\n"
+                "- Practice answers to common questions such as:\n"
+                "  - 'Tell me about yourself'\n"
+                "  - 'Why do you want this role?'\n"
+                "  - 'Tell me about a time you solved a problem at work'\n"
+            )
     else:
-        st.warning("Please enter both a job type and a city so I can build search links for you.")
+        st.warning(
+            tr(
+                "Please enter both a job type and a city so I can build search links for you.",
+                "እባክዎን ስራ አይነትን እና ከተማን ያስገቡ እንዲሁም አገናኞችን እንድገነባልዎ።",
+            )
+        )
 
 # =========================================================
-# Page 6 – Places of Worship
+# Page 6 – Places of Worship (improved, language/country specific)
 # =========================================================
 
-elif page == "🛕 Places of Worship":
-    st.subheader("🛕 Find a Place of Worship or Spiritual Community")
+elif page_code == "worship":
+    st.subheader(tr("🛕 Find a Place of Worship or Spiritual Community", "🛕 የመሰገና ቤት ወይም መንፈሳዊ ማህበር ፈልግ"))
 
-    worship_type = st.selectbox(
-        "What type of worship place are you looking for?",
-        [
-            "Christian church",
-            "Muslim mosque",
-            "Jewish synagogue",
-            "Hindu temple",
-            "Buddhist temple",
-            "Sikh gurdwara",
-            "Other / interfaith centre",
-        ],
+    worship_options = [
+        {"code": "christian", "label_en": "Christian church", "label_am": "የክርስቲያን ቤተክርስቲያን"},
+        {"code": "muslim", "label_en": "Muslim mosque", "label_am": "የሙስሊም መስጊድ"},
+        {"code": "jewish", "label_en": "Jewish synagogue", "label_am": "የይሁዳውያን ሲናጎግ"},
+        {"code": "hindu", "label_en": "Hindu temple", "label_am": "የሂንዱ ቤተመቅደስ"},
+        {"code": "buddhist", "label_en": "Buddhist temple", "label_am": "የቡዲስት ቤተመቅደስ"},
+        {"code": "sikh", "label_en": "Sikh gurdwara", "label_am": "የሲክ ጉርድዋራ"},
+        {"code": "other", "label_en": "Other / interfaith centre", "label_am": "ሌላ / የተዋሃደ እምነት ማዕከል"},
+    ]
+
+    def worship_label(opt):
+        return opt["label_am"] if lang_code == "am" else opt["label_en"]
+
+    worship_choice_index = st.selectbox(
+        tr("What type of worship place are you looking for?", "የእምነት ቤት ዓይነት ምንድን ነው የሚፈልጉት?"),
+        options=list(range(len(worship_options))),
+        format_func=lambda i: worship_label(worship_options[i]),
     )
+    worship_choice = worship_options[worship_choice_index]
+    worship_code = worship_choice["code"]
 
     worship_city = st.text_input(
-        "Your city or postal code",
-        placeholder="e.g., Winnipeg, MB or H3Z 2Y7",
+        tr("Your city or postal code", "ከተማዎ ወይም ፖስታ ኮድዎ"),
+        placeholder=tr("e.g., Winnipeg, MB or H3Z 2Y7", "ለምሳሌ፡ Winnipeg, MB ወይም H3Z 2Y7"),
+    )
+
+    preferred_worship_lang = st.text_input(
+        tr(
+            "Preferred worship language or country (optional)",
+            "የመሰገና ቋንቋ ወይም አገር (በፈቃድ)",
+        ),
+        placeholder=tr(
+            "e.g., Amharic, Arabic, Ethiopian, Filipino",
+            "ለምሳሌ፡ Amharic, Arabic, Ethiopian, Filipino",
+        ),
     )
 
     if worship_city.strip():
+        # Internal keywords for Google Maps (robust + specific)
         label_map = {
-            "Christian church": "church",
-            "Muslim mosque": "mosque",
-            "Jewish synagogue": "synagogue",
-            "Hindu temple": "hindu temple",
-            "Buddhist temple": "buddhist temple",
-            "Sikh gurdwara": "gurdwara",
-            "Other / interfaith centre": "spiritual centre",
+            "christian": "church",
+            "muslim": "mosque",
+            "jewish": "synagogue",
+            "hindu": "hindu temple",
+            "buddhist": "buddhist temple",
+            "sikh": "gurdwara",
+            "other": "spiritual centre",
         }
-        place_keyword = label_map.get(worship_type, "church")
-        query = f"{place_keyword} near {worship_city.strip()}"
+        place_keyword = label_map.get(worship_code, "church")
+
+        # Build richer query including language/country if provided
+        query_parts = []
+        if preferred_worship_lang.strip():
+            query_parts.append(preferred_worship_lang.strip())
+        query_parts.append(place_keyword)
+        query = " ".join(query_parts) + f" near {worship_city.strip()}"
+
         url = maps_search_url(query)
 
-        st.markdown("### Nearest worship centres")
+        st.markdown(tr("### Nearest worship centres", "### ቅርብ ያሉ የመሰገና ቤቶች"))
 
         st.markdown(
-            f"- [See **{worship_type}** locations near {worship_city.strip()} on Google Maps]({url})"
+            f"- [{tr('See specific results on Google Maps', 'የቋንቋ ወይም የአገር ተስማሚ ውጤቶችን በ Google Maps ላይ ይመልከቱ')} – {query}]({url})"
         )
         st.caption(
-            "On the map you’ll see **distance, service times, website links, and phone numbers** "
-            "for many places of worship. You can also read reviews and see photos."
+            tr(
+                "Because we include your language/country (if provided), results can show Ethiopian, Filipino, Arabic, or other specific communities instead of only generic sites.",
+                "የቋንቋ ወይም አገር ስም ስንጨምር ውጤቶች ብቻ ጠቅላላ ቤተክርስቲያን ሳይሆኑ ልዩ የኢትዮጵያ ፣ የፊሊፒንስ ፣ የአረብ ወዘተ ማህበረሰቦችን ሊያሳዩ ይችላሉ።",
+            )
         )
 
         st.info(
-            "If you prefer a specific language (e.g., Amharic, Arabic, Spanish), you can add it to your search "
-            "query in Google Maps for more tailored results."
+            tr(
+                "You can further refine inside Google Maps by filtering reviews, photos, and service times.",
+                "በ Google Maps ውስጥ ግምገማዎች፣ ፎቶዎች እና የአገልግሎት ሰዓት በመመርመር ውጤቶችን ተጨማሪ ማጣፈጥ ትችላለህ።",
+            )
         )
     else:
-        st.warning("Please enter your city or postal code so I can locate nearby places of worship.")
+        st.warning(
+            tr(
+                "Please enter your city or postal code so I can locate nearby places of worship.",
+                "እባክዎን ከተማዎን ወይም ፖስታ ኮድዎን ያስገቡ እንዲሁም ቅርብ ያሉ የመሰገና ቤቶችን እንድሰጥዎ።",
+            )
+        )
 
 # =========================================================
 # Page 7 – Food & Cultural Community Support
 # =========================================================
 
-elif page == "🥘 Food & Cultural Community Support":
-    st.subheader("🥘 Find Your Food, Culture & Community")
+elif page_code == "food":
+    st.subheader(tr("🥘 Find Your Food, Culture & Community", "🥘 ምግብዎን፣ ባህልዎንና ማህበረሰብዎን ፈልጉ"))
 
     origin_country = st.text_input(
-        "Which country or culture do you identify with most?",
-        placeholder="e.g., Ethiopia, India, Philippines, Brazil",
+        tr(
+            "Which country or culture do you identify with most?",
+            "በየትኛው አገር ወይም ባህል እርስዎን ብዙ ጊዜ ይስማማል?",
+        ),
+        placeholder=tr("e.g., Ethiopia, India, Philippines, Brazil", "ለምሳሌ፡ Ethiopia, India, Philippines, Brazil"),
     )
     food_city = st.text_input(
-        "Where are you living now? (city or postal code)",
-        placeholder="e.g., Surrey, BC or M1P 4P5",
+        tr(
+            "Where are you living now? (city or postal code)",
+            "አሁን የምትኖሩበት ቦታ ምንድን ነው? (ከተማ ወይም ፖስታ ኮድ)",
+        ),
+        placeholder=tr("e.g., Surrey, BC or M1P 4P5", "ለምሳሌ፡ Surrey, BC ወይም M1P 4P5"),
     )
 
     if origin_country.strip() and food_city.strip():
         o = origin_country.strip()
         c = food_city.strip()
 
-        st.markdown("### 1. Grocery stores with your traditional foods")
+        st.markdown(tr("### 1. Grocery stores with your traditional foods", "### 1. የባህላዊ ምግብዎን የሚሸጡ ሱቆች"))
 
         grocery_query = f"{o} grocery store near {c}"
         grocery_url = maps_search_url(grocery_query)
-        st.markdown(f"- [Stores selling **{o}** foods near {c}]({grocery_url})")
+        st.markdown(f"- [{tr('Stores selling your food near', 'የምግብዎን የሚሸጡ ሱቆች ቅርብ ከ')} {c}]({grocery_url})")
 
-        st.markdown("### 2. Cultural associations & community groups")
+        st.markdown(tr("### 2. Cultural associations & community groups", "### 2. የባህል ማህበሮችና ማህበረሰብ ቡድኖች"))
 
         assoc_query = f"{o} community association near {c}"
         assoc_url = google_search_url(assoc_query)
-        st.markdown(f"- [Cultural associations and community groups]({assoc_url})")
+        st.markdown(f"- [{tr('Cultural associations and community groups', 'የባህል ማህበሮችና ማህበረሰብ ቡድኖች')}]({assoc_url})")
 
-        st.markdown("### 3. Restaurants, cafés, and local events")
+        st.markdown(tr("### 3. Restaurants, cafés, and local events", "### 3. ረስቶራንቶች፣ ካፌዎችና የባህል በዓላት"))
 
         rest_query = f"{o} restaurant near {c}"
         rest_url = maps_search_url(rest_query)
         events_query = f"{o} cultural events {c}"
         events_url = google_search_url(events_query)
 
-        st.markdown(f"- [Restaurants & cafés serving **{o}** food near {c}]({rest_url})")
-        st.markdown(f"- [Local cultural events and festivals]({events_url})")
+        st.markdown(
+            f"- [{tr('Restaurants & cafés serving your food near', 'የምግብዎን የሚያቀርቡ ረስቶራንቶችና ካፌዎች ቅርብ ከ')} {c}]({rest_url})"
+        )
+        st.markdown(f"- [{tr('Local cultural events and festivals', 'የባህል በዓላትና በከተማዊ እንቅስቃሴዎች')}]({events_url})")
 
         st.caption(
-            "On these pages you'll usually find **opening hours, phone numbers, websites, and directions**. "
-            "Many communities also organize language schools, youth programs, and holiday celebrations."
+            tr(
+                "On these pages you'll usually find **opening hours, phone numbers, websites, and directions**.",
+                "በእነዚህ ገፆች ላይ **የመክፈቻ ሰዓቶች፣ ስልክ ቁጥሮች፣ ድህረገፆች እና አቅጣጫዎች** ማግኘት ትችላላችሁ።",
+            )
         )
 
         st.info(
-            "You are not alone. Connecting with people from your culture **and** new Canadian friends can "
-            "make your first months much easier and warmer."
+            tr(
+                "You are not alone. Connecting with people from your culture and new Canadian friends can make your first months much easier and warmer.",
+                "ብቻዎን አይደሉም። ከባህልዎ ጋር እና ከነባር ካናዳውያን ጓደኞች ጋር መገናኘት የመጀመሪያ ወራቶችዎን ቀላል እና ሞቃት ያስራዋል።",
+            )
         )
     else:
-        st.warning("Please fill in both your country/culture and your current city/postal code.")
+        st.warning(
+            tr(
+                "Please fill in both your country/culture and your current city/postal code.",
+                "እባክዎን አገርዎን/ባህልዎን እና አሁን የምትኖሩበትን ከተማ/ፖስታ ኮድ ያስገቡ።",
+            )
+        )
 
 # =========================================================
 # Page 8 – Immigration Guides
 # =========================================================
 
-elif page == "📚 Immigration Guides":
-    st.subheader("📚 Immigration & Settlement Guides")
+elif page_code == "guides":
+    st.subheader(tr("📚 Immigration & Settlement Guides", "📚 የመግቢያ እና የመቀመጫ መመሪያዎች"))
 
     if not guides:
         st.error("No guide data available. Please check `data/immigration_guides.json`.")
     else:
         topics = [g.get("topic") for g in guides]
-        topic_choice = st.selectbox("Select a topic", topics)
+        topic_choice = st.selectbox(tr("Select a topic", "ርዕስ ይምረጡ"), topics)
 
         guide = get_guide_by_topic(topic_choice)
 
         if guide:
-            st.markdown(f"## {guide.get('topic')}")
-            st.write(guide.get("summary", ""))
+            title = translate_dynamic(guide, "topic")
+            summary = translate_dynamic(guide, "summary")
+
+            st.markdown(f"## {title}")
+            st.write(summary)
 
             steps = guide.get("steps", [])
             if steps:
-                st.markdown("### Key steps")
+                st.markdown(tr("### Key steps", "### ዋና እርምጃዎች"))
                 for i, s in enumerate(steps, start=1):
                     st.markdown(f"{i}. {s}")
 
             links = guide.get("links", [])
             if links:
-                st.markdown("### Helpful links")
+                st.markdown(tr("### Helpful links", "### ጠቃሚ አገናኞች"))
                 for link in links:
                     label = link.get("label", "Link")
                     url = link.get("url", "#")
                     st.markdown(f"- [{label}]({url})")
 
             st.caption(
-                "Always verify with official Government of Canada / provincial websites, "
-                "especially for legal deadlines, forms, and required documents."
+                tr(
+                    "Always verify with official Government of Canada / provincial websites, especially for legal deadlines, forms, and required documents.",
+                    "ሕጋዊ ጊዜ ገደቦች፣ ቅጾች እና የሚያስፈልጉ ሰነዶችን ሲመለከቱ ሁልጊዜ ከመንግስት የካናዳ / የክልል ድህረገፆች ጋር ያረጋግጡ።",
+                )
             )
 
 # =========================================================
 # Page 9 – About
 # =========================================================
 
-elif page == "ℹ️ About this App":
-    st.subheader("ℹ️ About MyCanada – Newcomer AI Assistant")
+elif page_code == "about":
+    st.subheader(tr("ℹ️ About MyCanada – Newcomer AI Assistant", "ℹ️ ስለ MyCanada – ለአዲስ መጡ የኤይአይ አጋዥ"))
 
-    st.markdown(
-        """
-        This starter app is designed as a **lightweight, extensible Streamlit dashboard**
-        to support newcomers in understanding:
+    if lang_code == "am":
+        st.markdown(
+            """
+            ይህ መተግበሪያ ለካናዳ አዲስ መጡ ሰዎች ቀላል እና ተስፋ አሰጣጭ መመሪያ ለመሆን ተዘጋጀ።  
 
-        - Basic **immigration FAQs** (study permits, PR, work permits)
-        - **City & province options** across Canada
-        - **Banking, housing, jobs, worship, and cultural supports**
-        - Practical **first-steps guides** for arrival and settlement
+            - ስለ **መግቢያ መረጃ** (study permit, PR, work permit)  
+            - ስለ **ከተሞችና ክልሎች** አማራጮች  
+            - ስለ **ባንክ፣ ቤት፣ ስራ፣ መሰገና ቤትና ባህላዊ እርዳታ**  
+            - ስለ መጀመሪያ እርምጃዎች ቀላል መመሪያዎች  
 
-        ### How you can extend this
+            እውነተኛ ህጋዊ ወይም የመግቢያ ምክር አይተካም። ሁልጊዜ መረጃውን ከመንግስት የካናዳ / IRCC ድህረገፆች ጋር ያረጋግጡ።
+            """
+        )
+    else:
+        st.markdown(
+            """
+            This starter app is designed as a **lightweight, extensible Streamlit dashboard**
+            to support newcomers in understanding:
 
-        - Plug in richer FAQ content from official newcomer services
-        - Add more structured data for neighbourhoods, rents, and transit
-        - Integrate external LLMs (OpenAI, etc.) via `st.secrets` for smarter answers
-        - Use real APIs (e.g., job boards, housing platforms, map services) instead of search links
-        - Localize content in French, Amharic, Arabic, etc.
+            - Basic **immigration FAQs** (study permits, PR, work permits)
+            - **City & province options** across Canada
+            - **Banking, housing, jobs, worship, and cultural supports**
+            - Practical **first-steps guides** for arrival and settlement
 
-        ### Disclaimer
+            ### How you can extend this
 
-        This tool is for **information and orientation only**.  
-        It does **not** provide legal, immigration, or financial advice.
-        """
-    )
+            - Plug in richer FAQ content from official newcomer services
+            - Add more structured data for neighbourhoods, rents, and transit
+            - Integrate external LLMs (OpenAI, etc.) via `st.secrets` for smarter answers
+            - Use real APIs (e.g., job boards, housing platforms, map services) instead of search links
+            - Localize content in French, Amharic, Arabic, etc.
+
+            ### Disclaimer
+
+            This tool is for **information and orientation only**.  
+            It does **not** provide legal, immigration, or financial advice.
+            """
+        )
