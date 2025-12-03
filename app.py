@@ -1,8 +1,17 @@
+import os
 import json
 from pathlib import Path
 from difflib import SequenceMatcher  # needed for best_faq_match
 from urllib.parse import quote_plus  # for building search URLs
 import streamlit as st
+
+# Optional OpenAI import
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    openai = None
+    OPENAI_AVAILABLE = False
 
 # ✅ FIRST and ONLY Streamlit page config call
 st.set_page_config(
@@ -86,6 +95,89 @@ def maps_search_url(query: str) -> str:
 def google_search_url(query: str) -> str:
     """Generic Google search URL."""
     return f"https://www.google.com/search?q={quote_plus(query)}"
+
+
+def get_openai_client():
+    """Return configured OpenAI client or None if not available."""
+    if not OPENAI_AVAILABLE:
+        return None
+
+    api_key = None
+    # Try Streamlit secrets
+    try:
+        api_key = st.secrets.get("OPENAI_API_KEY", None)
+    except Exception:
+        api_key = None
+
+    # Fallback to environment variable
+    if not api_key:
+        api_key = os.getenv("OPENAI_API_KEY")
+
+    if not api_key:
+        return None
+
+    openai.api_key = api_key
+    return openai
+
+
+def generate_ai_answer(user_question: str, faq: dict | None, language: str):
+    """
+    Call OpenAI (if available) to generate a tailored answer as
+    'MyCanada Newcomer AI Assistant'. Returns (answer, error_message).
+    """
+    client = get_openai_client()
+    if client is None:
+        return None, (
+            "AI is not configured (missing API key or library). "
+            "Showing FAQ-based answer only."
+        )
+
+    ref_text = ""
+    if faq:
+        ref_text = (
+            f"Closest FAQ (for reference, do not copy blindly):\n"
+            f"Q: {faq.get('question', '')}\n"
+            f"A: {faq.get('answer', '')}\n"
+        )
+
+    system_msg = (
+        "You are 'MyCanada Newcomer AI Assistant', a warm, supportive assistant for "
+        "people who are new to Canada. You provide practical, concrete guidance about "
+        "immigration basics, banking, housing, jobs, community supports, and daily life. "
+        "You always remind users to verify legal and immigration details on official "
+        "Government of Canada / IRCC sources. Keep answers clear and not too long."
+    )
+
+    if "Amharic" in language:
+        system_msg += (
+            " Respond fully in Amharic (አማርኛ), using simple, clear language and short paragraphs. "
+            "You may keep bank or website names in English when needed."
+        )
+    else:
+        system_msg += " Respond in clear, simple English."
+
+    user_msg = (
+        f"User question:\n{user_question}\n\n"
+        f"{ref_text}\n\n"
+        "As the MyCanada Newcomer AI Assistant, give a step-by-step answer tailored to this user. "
+        "At the end, ask 1–2 short clarifying or follow-up questions to keep the conversation going, "
+        "but do NOT answer those follow-up questions yet."
+    )
+
+    try:
+        # Using ChatCompletion from openai~=0.x
+        response = client.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.5,
+        )
+        answer = response.choices[0].message["content"]
+        return answer, None
+    except Exception as e:
+        return None, f"AI error: {e}"
 
 
 # =========================================================
@@ -223,10 +315,15 @@ st.caption(
 )
 
 # =========================================================
-# Sidebar – Data inputs & navigation
+# Sidebar – Data inputs, language & navigation
 # =========================================================
 
 st.sidebar.title("MyCanada Controls")
+
+language = st.sidebar.selectbox(
+    "Language / ቋንቋ",
+    ["English", "Amharic (አማርኛ)"],
+)
 
 st.sidebar.subheader("Mode")
 page = st.sidebar.radio(
@@ -264,58 +361,104 @@ st.sidebar.caption(
 )
 
 # =========================================================
-# Page 1 – Ask the assistant (FAQ-style QA)
+# Page 1 – Ask the assistant (FAQ-style QA with AI)
 # =========================================================
 
 if page == "🤖 Ask the Newcomer Assistant":
-    st.subheader("Ask the Newcomer Assistant")
+    if "Amharic" in language:
+        st.subheader("ከ MyCanada አዲስ መጣ ኤይአይ አስስታንት ጋር ጠይቅ")
+        question_label = "ስለ ካናዳ መግባት ወይም መቀመጥ ጥያቄህን እዚህ ጻፍ፦"
+        question_ph = "ለምሳሌ፡ የንባብ ፈቃድ እንዴት እሰራ? ለ Express Entry የሥራ ስምሪት አስፈላጊ ነው?"
+        ask_label = "ከ MyCanada አስስታንት ጠይቅ"
+    else:
+        st.subheader("Ask the Newcomer Assistant")
+        question_label = "Type your question about coming to or settling in Canada:"
+        question_ph = (
+            "e.g., How do I apply for a study permit? Do I need a job offer for Express Entry?"
+        )
+        ask_label = "Ask MyCanada Assistant"
 
     col_q, col_info = st.columns([2, 1.2])
 
     with col_q:
         user_question = st.text_input(
-            "Type your question about coming to or settling in Canada:",
-            placeholder="e.g., How do I apply for a study permit? Do I need a job offer for Express Entry?",
+            question_label,
+            placeholder=question_ph,
         )
-        ask = st.button("Ask MyCanada Assistant")
+        ask = st.button(ask_label)
 
     with col_info:
-        st.markdown(
-            """
-            <div class="mc-card">
-                <strong>Tips for better answers</strong>
-                <ul style="padding-left:1.1rem;margin-top:0.4rem;">
-                    <li>Ask one main question at a time.</li>
-                    <li>Mention if you are a student, worker, or refugee claimant.</li>
-                    <li>Always double-check details on official IRCC sites.</li>
-                </ul>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        if "Amharic" in language:
+            st.markdown(
+                """
+                <div class="mc-card">
+                    <strong>ጠቃሚ መመሪያዎች</strong>
+                    <ul style="padding-left:1.1rem;margin-top:0.4rem;">
+                        <li>አንድ ዋና ጥያቄ ብቻ ለያይ።</li>
+                        <li>ተማሪ፣ ሰራተኛ ወይም እስር የፈጠረብህ መሆንህን ይግለጹ።</li>
+                        <li>ሁልጊዜ ከመንግስት የካናዳ / IRCC ድህረገፅ ጋር ያረጋግጡ።</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                """
+                <div class="mc-card">
+                    <strong>Tips for better answers</strong>
+                    <ul style="padding-left:1.1rem;margin-top:0.4rem;">
+                        <li>Ask one main question at a time.</li>
+                        <li>Mention if you are a student, worker, or refugee claimant.</li>
+                        <li>Always double-check details on official IRCC sites.</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     if ask and user_question.strip():
         faq, score = best_faq_match(user_question)
 
-        st.markdown("### 🗣️ Your question")
+        # Try AI first
+        ai_answer, ai_error = generate_ai_answer(user_question, faq, language)
+
+        if "Amharic" in language:
+            st.markdown("### 🗣️ ጥያቄህ")
+        else:
+            st.markdown("### 🗣️ Your question")
         st.write(user_question)
 
-        st.markdown("### 🤖 Assistant answer")
-        if faq:
-            st.write(faq.get("answer", ""))
-            if faq.get("tags"):
-                st.markdown(
-                    " ".join(f'<span class="mc-chip">{t}</span>' for t in faq["tags"]),
-                    unsafe_allow_html=True,
-                )
+        if "Amharic" in language:
+            st.markdown("### 🤖 መልስ ከ MyCanada አስስታንት")
         else:
-            st.warning(
-                "I could not find a close match in my current FAQ data. "
-                "Try rephrasing your question or selecting a guide on the **Immigration Guides** page."
-            )
+            st.markdown("### 🤖 Assistant answer")
 
-        st.markdown("### 🔍 Closest matched FAQ (for transparency)")
+        if ai_answer:
+            st.write(ai_answer)
+        else:
+            # Fallback: FAQ only
+            if ai_error:
+                st.info(ai_error)
+            if faq:
+                st.write(faq.get("answer", ""))
+                if faq.get("tags"):
+                    st.markdown(
+                        " ".join(f'<span class="mc-chip">{t}</span>' for t in faq["tags"]),
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.warning(
+                    "I could not find a close match in my current FAQ data. "
+                    "Try rephrasing your question or selecting a guide on the **Immigration Guides** page."
+                )
+
+        # Transparency: show matched FAQ
         if faq:
+            if "Amharic" in language:
+                st.markdown("### 🔍 በጣም ተመሳሳይ የተገኘው FAQ")
+            else:
+                st.markdown("### 🔍 Closest matched FAQ (for transparency)")
             with st.expander("Show matched FAQ"):
                 st.write(f"**Matched question (similarity: {score:.2f})**")
                 st.write(faq.get("question", ""))
@@ -695,10 +838,6 @@ elif page == "🛕 Places of Worship":
 # Page 7 – Food & Cultural Community Support
 # =========================================================
 
-# =========================================================
-# Page 7 – Food & Cultural Community Support
-# =========================================================
-
 elif page == "🥘 Food & Cultural Community Support":
     st.subheader("🥘 Find Your Food, Culture & Community")
 
@@ -748,7 +887,6 @@ elif page == "🥘 Food & Cultural Community Support":
         )
     else:
         st.warning("Please fill in both your country/culture and your current city/postal code.")
-
 
 # =========================================================
 # Page 8 – Immigration Guides
@@ -819,4 +957,3 @@ elif page == "ℹ️ About this App":
         It does **not** provide legal, immigration, or financial advice.
         """
     )
-
