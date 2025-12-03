@@ -1,30 +1,14 @@
 import json
 from pathlib import Path
+from difflib import SequenceMatcher  # needed for best_faq_match
 import streamlit as st
 
-# ✅ FIRST Streamlit command
+# ✅ FIRST and ONLY Streamlit page config call
 st.set_page_config(
     page_title="MyCanada – Newcomer AI Assistant",
     page_icon="🍁",
     layout="wide",
 )
-
-BASE_DIR = Path(__file__).resolve().parent
-
-@st.cache_data
-def load_json(filename: str):
-    path = BASE_DIR / "data" / filename
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        st.error(f"Missing data file: {path}")
-        return []
-    except json.JSONDecodeError as e:
-        st.error(f"Problem reading {path}: {e}")
-        return []
-
-
 
 # =========================================================
 # Paths & data loading
@@ -96,12 +80,6 @@ def get_guide_by_topic(topic: str):
 # =========================================================
 # Streamlit UI – theming & layout
 # =========================================================
-
-st.set_page_config(
-    page_title="MyCanada – Newcomer AI Assistant",
-    page_icon="🍁",
-    layout="wide",
-)
 
 # ---------- Custom CSS (warm orange + calm blue, soft background) ----------
 st.markdown(
@@ -366,7 +344,8 @@ elif page == "🏙️ Explore Cities & Provinces":
 
             if preferred_region:
                 filtered = [
-                    c for c in filtered
+                    c
+                    for c in filtered
                     if c.get("region_label") in preferred_region or not c.get("region_label")
                 ]
 
@@ -476,5 +455,3 @@ elif page == "ℹ️ About this App":
         It does **not** provide legal, immigration, or financial advice.
         """
     )
-
-
