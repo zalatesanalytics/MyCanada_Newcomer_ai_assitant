@@ -2,6 +2,13 @@ import json
 from pathlib import Path
 import streamlit as st
 
+# ✅ FIRST Streamlit command
+st.set_page_config(
+    page_title="MyCanada – Newcomer AI Assistant",
+    page_icon="🍁",
+    layout="wide",
+)
+
 BASE_DIR = Path(__file__).resolve().parent
 
 @st.cache_data
@@ -469,4 +476,5 @@ elif page == "ℹ️ About this App":
         It does **not** provide legal, immigration, or financial advice.
         """
     )
+
 
