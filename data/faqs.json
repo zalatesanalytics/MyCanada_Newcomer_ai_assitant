@@ -1,0 +1,38 @@
+
+---
+
+## 4️⃣ `data/faqs.json`
+
+```json
+[
+  {
+    "question": "Do I need a job offer to apply for Express Entry?",
+    "answer": "You do not always need a job offer to enter the Express Entry pool. A valid job offer can increase your Comprehensive Ranking System (CRS) score, but many candidates receive invitations to apply for permanent residence without one. Check official IRCC criteria for the latest rules.",
+    "tags": ["Express Entry", "PR", "Jobs"]
+  },
+  {
+    "question": "How do I apply for a study permit in Canada?",
+    "answer": "Generally, you need: an acceptance letter from a designated learning institution (DLI), proof of funds, identity documents (passport), and sometimes a letter of explanation or medical exam. Most applications are submitted online via your IRCC account. Always review the official IRCC checklist for your country of residence.",
+    "tags": ["Study permit", "Students"]
+  },
+  {
+    "question": "What should I do in my first weeks after arriving in Canada?",
+    "answer": "Common steps include: applying for your Social Insurance Number (SIN), registering for provincial health coverage, opening a bank account, updating your address with IRCC if needed, and connecting with local newcomer or settlement services. Your exact steps depend on your province and status.",
+    "tags": ["Arrival", "Settlement"]
+  },
+  {
+    "question": "How can I get a Social Insurance Number (SIN)?",
+    "answer": "You can apply for a SIN through Service Canada, often online or in person at a Service Canada Centre. You need your passport and valid immigration document (e.g., work permit, study permit, or PR confirmation). Keep your SIN private for employment and tax purposes.",
+    "tags": ["SIN", "Work"]
+  },
+  {
+    "question": "Is health care free for permanent residents in Canada?",
+    "answer": "Most provinces and territories provide publicly funded health coverage for permanent residents, but waiting periods and coverage details differ. After landing, apply for a health card in your province (e.g., OHIP in Ontario, MSP in BC). Some newcomers need private insurance until coverage starts.",
+    "tags": ["Health care", "PR"]
+  },
+  {
+    "question": "How can I find newcomer or settlement services?",
+    "answer": "Many cities have immigrant-serving organizations that offer free or low-cost services such as language classes, employment support, housing help, and family programs. Search for 'settlement services' plus your city or province, or visit official federal and provincial newcomer portals.",
+    "tags": ["Settlement services", "Support"]
+  }
+]

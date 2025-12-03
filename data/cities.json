@@ -1,0 +1,68 @@
+[
+  {
+    "name": "Toronto",
+    "province": "Ontario",
+    "region_label": "Central",
+    "summary": "Canada's largest city, multicultural and dynamic, with strong job markets in finance, tech, health, and education.",
+    "newcomer_support": "Extensive newcomer and settlement agencies, language programs, and diverse communities from all over the world.",
+    "cost_of_living": "High",
+    "transit": "Very good (subway, streetcars, regional trains)",
+    "key_sectors": ["Finance", "Technology", "Universities", "Health care"],
+    "family_friendly": true
+  },
+  {
+    "name": "Vancouver",
+    "province": "British Columbia",
+    "region_label": "West Coast",
+    "summary": "A coastal city with mild climate, strong tech and film industries, and easy access to nature.",
+    "newcomer_support": "Strong network of immigrant services, English schools, and community organizations.",
+    "cost_of_living": "Very High",
+    "transit": "Good (SkyTrain, buses, SeaBus)",
+    "key_sectors": ["Technology", "Film", "Tourism", "Trade"],
+    "family_friendly": true
+  },
+  {
+    "name": "Calgary",
+    "province": "Alberta",
+    "region_label": "Prairies",
+    "summary": "Growing city with a mix of energy, tech, and professional services, close to the Rocky Mountains.",
+    "newcomer_support": "Multiple immigrant-serving agencies, employment centres, and community hubs.",
+    "cost_of_living": "Medium",
+    "transit": "Moderate (C-Train + buses)",
+    "key_sectors": ["Energy", "Engineering", "Technology"],
+    "family_friendly": true
+  },
+  {
+    "name": "Winnipeg",
+    "province": "Manitoba",
+    "region_label": "Prairies",
+    "summary": "Mid-sized city with relatively affordable housing and active provincial nominee programs.",
+    "newcomer_support": "Recognized for strong newcomer services and community-based programs.",
+    "cost_of_living": "Lower to Medium",
+    "transit": "Basic (bus-based)",
+    "key_sectors": ["Manufacturing", "Agriculture", "Public sector"],
+    "family_friendly": true
+  },
+  {
+    "name": "Halifax",
+    "province": "Nova Scotia",
+    "region_label": "Atlantic",
+    "summary": "A coastal city with universities, growing immigration streams, and a strong sense of community.",
+    "newcomer_support": "Active settlement organizations and provincial programs to attract newcomers.",
+    "cost_of_living": "Medium",
+    "transit": "Basic to Moderate (buses, ferries)",
+    "key_sectors": ["Universities", "Health care", "Naval & marine"],
+    "family_friendly": true
+  },
+  {
+    "name": "Ottawa",
+    "province": "Ontario",
+    "region_label": "Central",
+    "summary": "Canada's capital, bilingual (English/French) with many public sector and tech jobs.",
+    "newcomer_support": "Well-developed settlement sector and newcomer outreach in multiple languages.",
+    "cost_of_living": "Medium to High",
+    "transit": "Good (O-Train light rail + buses)",
+    "key_sectors": ["Public service", "Technology", "Research"],
+    "family_friendly": true
+  }
+]

@@ -1,0 +1,54 @@
+[
+  {
+    "topic": "First 2 weeks in Canada",
+    "summary": "A practical checklist to help you get settled in your first days and weeks after arriving in Canada.",
+    "steps": [
+      "Apply for your Social Insurance Number (SIN) with Service Canada.",
+      "Apply for provincial health coverage and get your health card.",
+      "Open a bank account and understand basic banking fees.",
+      "Find temporary or permanent housing and understand your lease.",
+      "Register children in school if applicable.",
+      "Locate newcomer or settlement agencies in your city for language and employment help."
+    ],
+    "links": [
+      {
+        "label": "Government of Canada – Welcome to Canada guide",
+        "url": "https://www.canada.ca/"
+      }
+    ]
+  },
+  {
+    "topic": "High-level overview of PR pathways",
+    "summary": "A high-level overview of some mainstream permanent residence (PR) options. Always check official IRCC criteria and get professional advice if needed.",
+    "steps": [
+      "Learn the basics of Express Entry, including FSW, CEC, and FST categories.",
+      "Check whether a Provincial Nominee Program (PNP) fits your profile.",
+      "Explore family sponsorship if you have eligible relatives in Canada.",
+      "Review language testing requirements and educational credential assessments (ECA).",
+      "Use official PR eligibility tools on the IRCC website to estimate your options."
+    ],
+    "links": [
+      {
+        "label": "IRCC – Express Entry overview",
+        "url": "https://www.canada.ca/"
+      }
+    ]
+  },
+  {
+    "topic": "Studying in Canada – basics",
+    "summary": "Key steps for becoming an international student in Canada.",
+    "steps": [
+      "Choose a designated learning institution (DLI) and confirm your program is eligible for a study permit.",
+      "Obtain an official letter of acceptance from the school.",
+      "Collect proof of funds, identity documents, and any required police or medical certificates.",
+      "Submit your study permit application online and follow biometrics instructions.",
+      "Plan for housing, health insurance, and orientation sessions with your institution."
+    ],
+    "links": [
+      {
+        "label": "IRCC – Study in Canada",
+        "url": "https://www.canada.ca/"
+      }
+    ]
+  }
+]
