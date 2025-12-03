@@ -695,6 +695,10 @@ elif page == "🛕 Places of Worship":
 # Page 7 – Food & Cultural Community Support
 # =========================================================
 
+# =========================================================
+# Page 7 – Food & Cultural Community Support
+# =========================================================
+
 elif page == "🥘 Food & Cultural Community Support":
     st.subheader("🥘 Find Your Food, Culture & Community")
 
@@ -727,7 +731,7 @@ elif page == "🥘 Food & Cultural Community Support":
 
         rest_query = f"{o} restaurant near {c}"
         rest_url = maps_search_url(rest_query)
-        events_query = f\"{o} cultural events {c}\"
+        events_query = f"{o} cultural events {c}"
         events_url = google_search_url(events_query)
 
         st.markdown(f"- [Restaurants & cafés serving **{o}** food near {c}]({rest_url})")
@@ -744,6 +748,7 @@ elif page == "🥘 Food & Cultural Community Support":
         )
     else:
         st.warning("Please fill in both your country/culture and your current city/postal code.")
+
 
 # =========================================================
 # Page 8 – Immigration Guides
@@ -814,3 +819,4 @@ elif page == "ℹ️ About this App":
         It does **not** provide legal, immigration, or financial advice.
         """
     )
+
