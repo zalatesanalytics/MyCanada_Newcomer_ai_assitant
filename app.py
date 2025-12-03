@@ -1,8 +1,23 @@
 import json
 from pathlib import Path
-from difflib import SequenceMatcher
-
 import streamlit as st
+
+BASE_DIR = Path(__file__).resolve().parent
+
+@st.cache_data
+def load_json(filename: str):
+    path = BASE_DIR / "data" / filename
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        st.error(f"Missing data file: {path}")
+        return []
+    except json.JSONDecodeError as e:
+        st.error(f"Problem reading {path}: {e}")
+        return []
+
+
 
 # =========================================================
 # Paths & data loading
@@ -454,3 +469,4 @@ elif page == "ℹ️ About this App":
         It does **not** provide legal, immigration, or financial advice.
         """
     )
+
