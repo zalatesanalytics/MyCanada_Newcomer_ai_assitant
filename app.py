@@ -1,17 +1,7 @@
-import os
 import json
 from pathlib import Path
 from difflib import SequenceMatcher  # needed for best_faq_match
-from urllib.parse import quote_plus  # for building search URLs
 import streamlit as st
-
-# Optional OpenAI import
-try:
-    import openai
-    OPENAI_AVAILABLE = True
-except ImportError:
-    openai = None
-    OPENAI_AVAILABLE = False
 
 # ✅ FIRST and ONLY Streamlit page config call
 st.set_page_config(
@@ -43,7 +33,337 @@ guides = load_json("immigration_guides.json")
 
 
 # =========================================================
-# Helper functions
+# Translation system
+# =========================================================
+
+TRANSLATIONS = {
+    "fr": {
+        # Sidebar & navigation
+        "MyCanada Controls": "Contrôles MyCanada",
+        "Language / ቋንቋ / Langue": "Langue / ቋንቋ / Language",
+        "Choose what you want to explore:":
+            "Choisissez ce que vous souhaitez explorer :",
+        "Quick filters (optional)": "Filtres rapides (optionnel)",
+        "Preferred region(s) in Canada":
+            "Région(s) préférée(s) au Canada",
+        "Used as soft filters when browsing cities.":
+            "Utilisé comme filtre souple lors de l’exploration des villes.",
+        "Show cities with strong family/newcomer support":
+            "Afficher les villes avec un fort soutien aux familles et aux nouveaux arrivants",
+        "Built with ❤️ by Zalates Analytics as a learning & onboarding assistant for newcomers.":
+            "Créé avec ❤️ par Zalates Analytics comme assistant d’apprentissage et d’accueil pour les nouveaux arrivants.",
+
+        # Page labels
+        "🤖 Ask the Newcomer Assistant": "🤖 Poser une question à l’assistant",
+        "🏙️ Explore Cities & Provinces": "🏙️ Explorer les villes et provinces",
+        "📚 Immigration Guides": "📚 Guides d’immigration",
+        "ℹ️ About this App": "ℹ️ À propos de cette application",
+
+        # Hero
+        "MyCanada – Newcomer AI Assistant 🍁":
+            "MyCanada – Assistant IA pour nouveaux arrivants 🍁",
+        "Zalates Analytics – AI Data-Cleaning, Integration & Insight Dashboard for newcomers.":
+            "Zalates Analytics – Tableau de bord IA pour le nettoyage, l’intégration et l’analyse des données des nouveaux arrivants.",
+        "Unify messy information, reduce confusion, and explore warm fall-coloured dashboards for immigration, settlement, and city choices.":
+            "Unifiez des informations dispersées, réduisez la confusion et explorez des tableaux de bord chaleureux pour l’immigration, l’installation et le choix de ville.",
+        "Immigration basics": "Notions de base sur l’immigration",
+        "City & province explorer": "Explorateur de villes et provinces",
+        "First weeks in Canada": "Premières semaines au Canada",
+        "This assistant is for general information only. It does **not** replace legal or immigration advice. Always verify details on official Government of Canada / IRCC websites.":
+            "Cet assistant fournit des informations générales uniquement. Il ne remplace **pas** les conseils juridiques ou d’immigration. Vérifiez toujours les détails sur les sites officiels du gouvernement du Canada / IRCC.",
+
+        # Ask page
+        "Ask the Newcomer Assistant": "Poser une question à l’assistant",
+        "Type your question about coming to or settling in Canada:":
+            "Écrivez votre question sur la venue ou l’installation au Canada :",
+        "e.g., How do I apply for a study permit? Do I need a job offer for Express Entry?":
+            "par ex. Comment demander un permis d’études ? Ai-je besoin d’une offre d’emploi pour Entrée express ?",
+        "Ask MyCanada Assistant": "Interroger l’assistant MyCanada",
+        "Tips for better answers": "Conseils pour de meilleures réponses",
+        "Ask one main question at a time.": "Posez une seule question principale à la fois.",
+        "Mention if you are a student, worker, or refugee claimant.":
+            "Précisez si vous êtes étudiant, travailleur ou demandeur d’asile.",
+        "Always double-check details on official IRCC sites.":
+            "Vérifiez toujours les détails sur les sites officiels d’IRCC.",
+        "🗣️ Your question": "🗣️ Votre question",
+        "🤖 Assistant answer": "🤖 Réponse de l’assistant",
+        "I could not find a close match in my current FAQ data. Try rephrasing your question or selecting a guide on the **Immigration Guides** page.":
+            "Je n’ai pas trouvé de question similaire dans les FAQ actuelles. Essayez de reformuler votre question ou de choisir un guide dans la page **Guides d’immigration**.",
+        "🔍 Closest matched FAQ (for transparency)":
+            "🔍 Question la plus proche (pour transparence)",
+        "Show matched FAQ": "Afficher la FAQ correspondante",
+
+        # Cities page
+        "🏙️ Explore Cities & Provinces": "🏙️ Explorer les villes et provinces",
+        "No city data available. Please check `data/cities.json`.":
+            "Aucune donnée de ville disponible. Veuillez vérifier `data/cities.json`.",
+        "Select a province or territory": "Sélectionnez une province ou un territoire",
+        "What matters most to you?": "Qu’est-ce qui compte le plus pour vous ?",
+        "Affordability": "Coût de la vie",
+        "Jobs & economy": "Emplois et économie",
+        "Public transit": "Transport en commun",
+        "Student life": "Vie étudiante",
+        "Immigrant services": "Services aux immigrants",
+        "Family & schools": "Famille et écoles",
+        "Showing **{n}** city(ies) that match your filters.":
+            "Affichage de **{n}** ville(s) correspondant à vos filtres.",
+        "Try removing some filters to see more cities.":
+            "Essayez de retirer certains filtres pour voir plus de villes.",
+        "Newcomer services:": "Services pour nouveaux arrivants :",
+        "Cost of living:": "Coût de la vie :",
+        "Transit:": "Transport :",
+
+        # Immigration guides page
+        "📚 Immigration & Settlement Guides":
+            "📚 Guides d’immigration et d’installation",
+        "No guide data available. Please check `data/immigration_guides.json`.":
+            "Aucune donnée de guide disponible. Veuillez vérifier `data/immigration_guides.json`.",
+        "Select a topic": "Sélectionnez un sujet",
+        "Key steps": "Étapes clés",
+        "Helpful links": "Liens utiles",
+        "Always verify with official Government of Canada / provincial websites, especially for legal deadlines, forms, and required documents.":
+            "Vérifiez toujours avec les sites officiels du gouvernement du Canada / des provinces, surtout pour les délais légaux, formulaires et documents requis.",
+
+        # About page
+        "ℹ️ About MyCanada – Newcomer AI Assistant":
+            "ℹ️ À propos de MyCanada – Assistant IA pour nouveaux arrivants",
+    },
+    "am": {
+        # You/they can expand these Amharic translations later.
+        "MyCanada Controls": "MyCanada መቆጣጠሪያዎች",
+        "Language / ቋንቋ / Langue": "ቋንቋ / Language / Langue",
+        "🤖 Ask the Newcomer Assistant": "🤖 ከአዲስ መጡ አጋዥ ጠይቅ",
+        "🏙️ Explore Cities & Provinces": "🏙️ ከተሞችን እና ክፍለ አካባቢዎችን አስሱ",
+        "📚 Immigration Guides": "📚 የመግቢያ መመሪያዎች",
+        "ℹ️ About this App": "ℹ️ ስለዚህ መተግበሪያ",
+        "Ask the Newcomer Assistant": "ከአዲስ መጡ አጋዥ ጠይቅ",
+    },
+}
+
+LANGUAGE_OPTIONS = {
+    "English": "en",
+    "Français": "fr",
+    "Amharic": "am",
+}
+
+
+def t(text: str) -> str:
+    """
+    Simple translation helper.
+    Looks up the string in TRANSLATIONS based on st.session_state["lang"].
+    Falls back to the original text if no translation is found.
+    """
+    lang = st.session_state.get("lang", "en")
+    if lang == "en":
+        return text
+    return TRANSLATIONS.get(lang, {}).get(text, text)
+
+
+# =========================================================
+# Streamlit UI – theming & layout
+# =========================================================
+
+# ---------- Custom CSS: improved contrast, font size, alignment ----------
+st.markdown(
+    """
+    <style>
+    html, body, [class*="css"] {
+        font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Roboto", sans-serif;
+    }
+
+    .stApp {
+        background: radial-gradient(circle at 0% 0%, #020617 0%, #020617 40%, #020617 100%);
+    }
+
+    .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 2rem;
+        background: linear-gradient(145deg, #fefce8 0%, #fffbeb 30%, #ecfdf5 65%, #e0f2fe 100%);
+        border-radius: 24px;
+        box-shadow: 0 22px 60px rgba(15, 23, 42, 0.55);
+        margin-top: 1.2rem;
+        margin-bottom: 2rem;
+        max-width: 1200px;
+    }
+
+    /* Centered big title banner */
+    .mc-hero {
+        border-radius: 24px;
+        padding: 1.4rem 1.8rem;
+        text-align: center;
+        background: radial-gradient(circle at top left, #fb923c 0%, #f97316 20%, #0284c7 85%);
+        color: white;
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.7);
+        margin-bottom: 1.0rem;
+    }
+    .mc-hero h1 {
+        margin-bottom: 0.3rem;
+        font-size: 2.3rem;
+        letter-spacing: 0.03em;
+    }
+    .mc-hero p {
+        margin-top: 0;
+        font-size: 1.0rem;
+        line-height: 1.5;
+        opacity: 0.96;
+    }
+
+    /* Small pill tags */
+    .mc-pill {
+        display: inline-block;
+        padding: 0.12rem 0.8rem;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        background-color: rgba(15, 23, 42, 0.22);
+        color: #f9fafb;
+        margin: 0 0.18rem;
+    }
+
+    /* Sidebar styling - better contrast, larger fonts, cleaner layout */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #020617 0%, #020617 60%, #020617 100%) !important;
+        color: #f9fafb !important;
+        padding: 1.2rem 1rem !important;
+    }
+    [data-testid="stSidebar"] * {
+        color: #e5e7eb !important;
+        font-size: 1.0rem !important;
+    }
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 {
+        color: #facc15 !important;
+        margin-bottom: 0.4rem !important;
+    }
+    [data-testid="stSidebar"] label {
+        color: #e5e7eb !important;
+        font-weight: 500;
+    }
+    [data-testid="stSidebar"] .element-container {
+        padding-bottom: 0.35rem;
+    }
+
+    /* Cards */
+    .mc-card {
+        background-color: rgba(255, 255, 255, 0.9);
+        border-radius: 18px;
+        padding: 1rem 1.2rem;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+        margin-bottom: 0.9rem;
+    }
+
+    .mc-muted {
+        color: #4b5563;
+        font-size: 0.86rem;
+    }
+
+    .mc-chip {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.15rem 0.6rem;
+        border-radius: 999px;
+        background-color: #fee2e2;
+        color: #b91c1c;
+        font-size: 0.78rem;
+        font-weight: 600;
+        margin-right: 0.3rem;
+        margin-bottom: 0.2rem;
+    }
+
+    /* Improve general text readability */
+    h2, h3, h4 {
+        letter-spacing: 0.01em;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# =========================================================
+# Sidebar – Language + Data inputs & navigation
+# =========================================================
+
+# Language selector (applies across app)
+with st.sidebar:
+    lang_label = st.selectbox(
+        "Language / ቋንቋ / Langue",
+        list(LANGUAGE_OPTIONS.keys()),
+        index=0,
+    )
+st.session_state["lang"] = LANGUAGE_OPTIONS[lang_label]
+
+st.sidebar.title(t("MyCanada Controls"))
+
+st.sidebar.subheader(t("Mode"))
+
+# Page keys for internal logic
+PAGE_CONFIG = {
+    "ask": {"label": "🤖 Ask the Newcomer Assistant"},
+    "cities": {"label": "🏙️ Explore Cities & Provinces"},
+    "guides": {"label": "📚 Immigration Guides"},
+    "about": {"label": "ℹ️ About this App"},
+}
+
+page_key = st.sidebar.radio(
+    t("Choose what you want to explore:"),
+    options=list(PAGE_CONFIG.keys()),
+    format_func=lambda key: t(PAGE_CONFIG[key]["label"]),
+)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader(t("Quick filters (optional)"))
+
+REGION_OPTIONS = ["Atlantic", "Central", "Prairies", "West Coast", "North"]
+
+preferred_region = st.sidebar.multiselect(
+    t("Preferred region(s) in Canada"),
+    options=REGION_OPTIONS,
+    format_func=lambda opt: t(opt),
+    help=t("Used as soft filters when browsing cities."),
+)
+
+family_friendly = st.sidebar.checkbox(
+    t("Show cities with strong family/newcomer support"),
+    value=False,
+)
+
+st.sidebar.markdown("---")
+st.sidebar.caption(
+    t(
+        "Built with ❤️ by Zalates Analytics as a learning & onboarding assistant for newcomers."
+    )
+)
+
+# =========================================================
+# Header / Hero
+# =========================================================
+
+st.markdown(
+    f"""
+    <div class="mc-hero">
+        <h1>{t("MyCanada – Newcomer AI Assistant 🍁")}</h1>
+        <p>{t("Zalates Analytics – AI Data-Cleaning, Integration & Insight Dashboard for newcomers.")}<br>
+        {t("Unify messy information, reduce confusion, and explore warm fall-coloured dashboards for immigration, settlement, and city choices.")}</p>
+        <div style="margin-top:0.4rem;">
+            <span class="mc-pill">{t("Immigration basics")}</span>
+            <span class="mc-pill">{t("City & province explorer")}</span>
+            <span class="mc-pill">{t("First weeks in Canada")}</span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.caption(
+    t(
+        "This assistant is for general information only. It does **not** replace legal or immigration advice. "
+        "Always verify details on official Government of Canada / IRCC websites."
+    )
+)
+
+# =========================================================
+# Helper functions (dynamic translation support)
 # =========================================================
 
 def best_faq_match(query: str, threshold: float = 0.55):
@@ -87,573 +407,113 @@ def get_guide_by_topic(topic: str):
     return None
 
 
-def maps_search_url(query: str) -> str:
-    """Build a Google Maps search URL."""
-    return f"https://www.google.com/maps/search/{quote_plus(query)}"
-
-
-def google_search_url(query: str) -> str:
-    """Generic Google search URL."""
-    return f"https://www.google.com/search?q={quote_plus(query)}"
-
-
-def get_openai_client():
-    """Return configured OpenAI client or None if not available."""
-    if not OPENAI_AVAILABLE:
-        return None
-
-    api_key = None
-    # Try Streamlit secrets
-    try:
-        api_key = st.secrets.get("OPENAI_API_KEY", None)
-    except Exception:
-        api_key = None
-
-    # Fallback to environment variable
-    if not api_key:
-        api_key = os.getenv("OPENAI_API_KEY")
-
-    if not api_key:
-        return None
-
-    openai.api_key = api_key
-    return openai
-
-
-def generate_ai_answer(user_question: str, faq: dict | None, language: str):
+def translate_dynamic(item: dict, base_key: str) -> str:
     """
-    Call OpenAI (if available) to generate a tailored answer as
-    'MyCanada Newcomer AI Assistant'. Returns (answer, error_message).
+    For content coming from JSON, try language-specific keys like
+    'summary_fr' or 'summary_am'. Fallback to base_key.
     """
-    client = get_openai_client()
-    if client is None:
-        return None, (
-            "AI is not configured (missing API key or library). "
-            "Showing FAQ-based answer only."
-        )
-
-    ref_text = ""
-    if faq:
-        ref_text = (
-            f"Closest FAQ (for reference, do not copy blindly):\n"
-            f"Q: {faq.get('question', '')}\n"
-            f"A: {faq.get('answer', '')}\n"
-        )
-
-    system_msg = (
-        "You are 'MyCanada Newcomer AI Assistant', a warm, supportive assistant for "
-        "people who are new to Canada. You provide practical, concrete guidance about "
-        "immigration basics, banking, housing, jobs, community supports, and daily life. "
-        "You always remind users to verify legal and immigration details on official "
-        "Government of Canada / IRCC sources. Keep answers clear and not too long."
-    )
-
-    if "Amharic" in language:
-        system_msg += (
-            " Respond fully in Amharic (አማርኛ), using simple, clear language and short paragraphs. "
-            "You may keep bank or website names in English when needed."
-        )
-    else:
-        system_msg += " Respond in clear, simple English."
-
-    user_msg = (
-        f"User question:\n{user_question}\n\n"
-        f"{ref_text}\n\n"
-        "As the MyCanada Newcomer AI Assistant, give a step-by-step answer tailored to this user. "
-        "At the end, ask 1–2 short clarifying or follow-up questions to keep the conversation going, "
-        "but do NOT answer those follow-up questions yet."
-    )
-
-    try:
-        response = client.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.5,
-        )
-        answer = response.choices[0].message["content"]
-        return answer, None
-    except Exception as e:
-        return None, f"AI error: {e}"
-
-
-def translate_to_amharic(text: str):
-    """
-    Translate English content to Amharic using OpenAI, if configured.
-    Returns (translation or None, error_message or None).
-    """
-    client = get_openai_client()
-    if client is None:
-        return None, "Translation not available; AI is not configured."
-
-    system_msg = (
-        "You are a professional translator. Translate the following Canadian newcomer "
-        "support content from English into clear, simple Amharic (አማርኛ). Preserve lists "
-        "and structure, keep organization names and URLs in English where appropriate."
-    )
-
-    try:
-        response = client.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": text},
-            ],
-            temperature=0.3,
-        )
-        translated = response.choices[0].message["content"]
-        return translated, None
-    except Exception as e:
-        return None, f"Translation error: {e}"
-
-
-def translate_section_button(section_text: str, key: str):
-    """
-    Render a 'Translate this page to Amharic' button and show translation if clicked.
-    """
-    if st.button("🌐 Translate this page to Amharic (አማርኛ)", key=key):
-        with st.spinner("Translating to Amharic..."):
-            translated, err = translate_to_amharic(section_text)
-        if translated:
-            st.markdown("#### በአማርኛ ትርጉም")
-            st.write(translated)
-        else:
-            st.warning(err or "Translation not available.")
-
-
-def improve_resume_with_ai(resume_text: str, job_title: str, city: str, extra_notes: str):
-    """
-    Use OpenAI to suggest an improved, Canadian-style resume summary & bullet points.
-    """
-    client = get_openai_client()
-    if client is None:
-        return None, "AI is not configured; cannot revise resume right now."
-
-    system_msg = (
-        "You are a Canadian newcomer employment coach and resume expert. "
-        "Rewrite and improve the user's resume content into a Canadian-style resume. "
-        "Keep it professional, concise, and tailored to the target job and city. "
-        "Do not invent experience; reorganize and highlight what's already there. "
-        "Return:\n"
-        "- A short professional summary (2–3 sentences)\n"
-        "- 6–10 bullet points of key achievements/skills\n"
-        "- 3 customized suggestions for improvement (not full text)."
-    )
-
-    user_msg = (
-        f"Target job in Canada: {job_title or 'Not specified'}\n"
-        f"Preferred city/region: {city or 'Not specified'}\n"
-        f"User notes / things to highlight: {extra_notes or 'None'}\n\n"
-        f"Original resume text:\n{resume_text}\n"
-    )
-
-    try:
-        response = client.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.5,
-        )
-        improved = response.choices[0].message["content"]
-        return improved, None
-    except Exception as e:
-        return None, f"Resume AI error: {e}"
+    lang = st.session_state.get("lang", "en")
+    if lang == "en":
+        return item.get(base_key, "")
+    lang_key = f"{base_key}_{lang}"
+    return item.get(lang_key, item.get(base_key, ""))
 
 
 # =========================================================
-# Streamlit UI – theming & layout
+# Page 1 – Ask the assistant (FAQ-style QA)
 # =========================================================
 
-# ---------- Custom CSS (softer sidebar, improved buttons/layout) ----------
-st.markdown(
-    """
-    <style>
-    html, body, [class*="css"] {
-        font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Roboto", sans-serif;
-    }
-
-    .stApp {
-        background: radial-gradient(circle at 0% 0%, #e0f2fe 0%, #eff6ff 40%, #f9fafb 100%);
-    }
-
-    .block-container {
-        padding-top: 1.5rem;
-        padding-bottom: 2rem;
-        background: #ffffff;
-        border-radius: 24px;
-        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.15);
-        margin-top: 1.2rem;
-        margin-bottom: 2rem;
-        max-width: 1200px;
-        margin-left: auto;
-        margin-right: auto;
-    }
-
-    /* Centered big title banner */
-    .mc-hero {
-        border-radius: 24px;
-        padding: 1.4rem 1.8rem;
-        text-align: center;
-        background: radial-gradient(circle at top left, #fb923c 0%, #f97316 20%, #0284c7 85%);
-        color: white;
-        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.35);
-        margin-bottom: 1.0rem;
-    }
-    .mc-hero h1 {
-        margin-bottom: 0.3rem;
-        font-size: 2.1rem;
-        letter-spacing: 0.03em;
-    }
-    .mc-hero p {
-        margin-top: 0;
-        font-size: 0.98rem;
-        opacity: 0.96;
-    }
-
-    /* Small pill tags */
-    .mc-pill {
-        display: inline-block;
-        padding: 0.08rem 0.7rem;
-        border-radius: 999px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        background-color: rgba(15, 23, 42, 0.15);
-        margin: 0 0.15rem;
-    }
-
-    /* Sidebar styling – lighter background & dark text */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #f9fafb 0%, #eef2ff 40%, #e0f2fe 100%) !important;
-        border-right: 1px solid rgba(148, 163, 184, 0.5);
-    }
-    [data-testid="stSidebar"] * {
-        color: #111827 !important;
-        font-size: 0.9rem;
-    }
-    [data-testid="stSidebar"] h1,
-    [data-testid="stSidebar"] h2,
-    [data-testid="stSidebar"] h3 {
-        color: #1d4ed8 !important;
-        font-weight: 700;
-    }
-    [data-testid="stSidebar"] label {
-        color: #111827 !important;
-        font-weight: 500;
-    }
-
-    /* Sidebar controls styling */
-    [data-testid="stSidebar"] .stRadio > label,
-    [data-testid="stSidebar"] .stSelectbox > label {
-        margin-bottom: 0.25rem;
-    }
-
-    /* Main cards */
-    .mc-card {
-        background-color: rgba(255, 255, 255, 0.95);
-        border-radius: 18px;
-        padding: 1rem 1.2rem;
-        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
-        margin-bottom: 0.9rem;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-    }
-
-    .mc-muted {
-        color: #4b5563;
-        font-size: 0.82rem;
-    }
-
-    .mc-chip {
-        display: inline-flex;
-        align-items: center;
-        padding: 0.15rem 0.6rem;
-        border-radius: 999px;
-        background-color: #fee2e2;
-        color: #b91c1c;
-        font-size: 0.75rem;
-        margin-right: 0.3rem;
-        margin-bottom: 0.2rem;
-    }
-
-    /* Buttons */
-    .stButton>button {
-        border-radius: 999px;
-        padding: 0.45rem 1.1rem;
-        border: none;
-        background: linear-gradient(90deg, #f97316, #ea580c);
-        color: white;
-        font-weight: 600;
-        box-shadow: 0 8px 20px rgba(248, 113, 113, 0.35);
-        cursor: pointer;
-    }
-    .stButton>button:hover {
-        background: linear-gradient(90deg, #ea580c, #c2410c);
-        box-shadow: 0 10px 24px rgba(248, 113, 113, 0.45);
-    }
-
-    /* Selects / inputs rounded */
-    .stSelectbox > div > div,
-    .stTextInput > div > div,
-    .stTextArea > div > textarea {
-        border-radius: 999px !important;
-    }
-
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# =========================================================
-# Header / Hero
-# =========================================================
-
-st.markdown(
-    """
-    <div class="mc-hero">
-        <h1>MyCanada – Newcomer AI Assistant 🍁</h1>
-        <p>Zalates Analytics – AI Data-Cleaning, Integration & Insight Dashboard for newcomers.<br>
-        Unify messy information, reduce confusion, and explore warm fall-coloured dashboards 
-        for immigration, settlement, and city choices.</p>
-        <div style="margin-top:0.4rem;">
-            <span class="mc-pill">Immigration basics</span>
-            <span class="mc-pill">City & province explorer</span>
-            <span class="mc-pill">First weeks in Canada</span>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-st.caption(
-    "⚠️ This assistant is for general information only. It does **not** replace legal or immigration advice. "
-    "Always verify details on official Government of Canada / IRCC websites."
-)
-
-# =========================================================
-# Sidebar – Data inputs, language & navigation
-# =========================================================
-
-st.sidebar.title("MyCanada Controls")
-
-language = st.sidebar.selectbox(
-    "Language / ቋንቋ",
-    ["English", "Amharic (አማርኛ)"],
-)
-
-mode_label = "Choose what you want to explore:"
-if "Amharic" in language:
-    mode_label = "መፈለጊያውን ምን ማየት ትፈልጋለህ?"
-
-st.sidebar.subheader("Mode / ሞድ")
-page = st.sidebar.radio(
-    mode_label,
-    [
-        "🤖 Ask the Newcomer Assistant",
-        "🏙️ Explore Cities & Provinces",
-        "🏦 Open a Bank Account",
-        "🏡 Housing Search",
-        "💼 Employment Services",
-        "🛕 Places of Worship",
-        "🥘 Food & Cultural Community Support",
-        "⚖️ Legal & Immigration Help",
-        "📚 Immigration Guides",
-        "ℹ️ About this App",
-    ],
-)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Quick filters (optional)")
-
-if "Amharic" in language:
-    region_options = [
-        "Atlantic (አትላንቲክ)",
-        "Central (መካከለኛ)",
-        "Prairies (ፕሬሪስ)",
-        "West Coast (ምዕራባዊ ዳርቻ)",
-        "North (ሰሜን)",
-    ]
-else:
-    region_options = ["Atlantic", "Central", "Prairies", "West Coast", "North"]
-
-preferred_region = st.sidebar.multiselect(
-    "Preferred region(s) in Canada",
-    options=region_options,
-    help="Used as soft filters when browsing cities.",
-)
-
-family_friendly = st.sidebar.checkbox(
-    "Show cities with strong family/newcomer support",
-    value=False,
-)
-
-st.sidebar.markdown("---")
-st.sidebar.caption(
-    "Built with ❤️ by Zalates Analytics as a learning & onboarding assistant for newcomers."
-)
-
-# =========================================================
-# Page 1 – Ask the assistant (FAQ-style QA with AI)
-# =========================================================
-
-if page == "🤖 Ask the Newcomer Assistant":
-    # Small explainer text for translation
-    ask_intro_text = (
-        "Use this assistant to ask questions about coming to or settling in Canada. "
-        "You can ask about study permits, permanent residence, work permits, and daily life."
-    )
-
-    if "Amharic" in language:
-        st.subheader("ከ MyCanada አዲስ መጣ ኤይአይ አስስታንት ጋር ጠይቅ")
-        question_label = "ስለ ካናዳ መግባት ወይም መቀመጥ ጥያቄህን እዚህ ጻፍ፦"
-        question_ph = "ለምሳሌ፡ የንባብ ፈቃድ እንዴት እሰራ? ለ Express Entry የሥራ ስምሪት አስፈላጊ ነው?"
-        ask_label = "ከ MyCanada አስስታንት ጠይቅ"
-    else:
-        st.subheader("Ask the Newcomer Assistant")
-        question_label = "Type your question about coming to or settling in Canada:"
-        question_ph = (
-            "e.g., How do I apply for a study permit? Do I need a job offer for Express Entry?"
-        )
-        ask_label = "Ask MyCanada Assistant"
+if page_key == "ask":
+    st.subheader(t("Ask the Newcomer Assistant"))
 
     col_q, col_info = st.columns([2, 1.2])
 
     with col_q:
         user_question = st.text_input(
-            question_label,
-            placeholder=question_ph,
+            t("Type your question about coming to or settling in Canada:"),
+            placeholder=t(
+                "e.g., How do I apply for a study permit? Do I need a job offer for Express Entry?"
+            ),
         )
-        ask = st.button(ask_label)
+        ask = st.button(t("Ask MyCanada Assistant"))
 
     with col_info:
-        if "Amharic" in language:
-            st.markdown(
-                """
-                <div class="mc-card">
-                    <strong>ጠቃሚ መመሪያዎች</strong>
-                    <ul style="padding-left:1.1rem;margin-top:0.4rem;">
-                        <li>አንድ ዋና ጥያቄ ብቻ ለያይ።</li>
-                        <li>ተማሪ፣ ሰራተኛ ወይም እስር የፈጠረብህ መሆንህን ይግለጹ።</li>
-                        <li>ሁልጊዜ ከመንግስት የካናዳ / IRCC ድህረገፅ ጋር ያረጋግጡ።</li>
-                    </ul>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                """
-                <div class="mc-card">
-                    <strong>Tips for better answers</strong>
-                    <ul style="padding-left:1.1rem;margin-top:0.4rem;">
-                        <li>Ask one main question at a time.</li>
-                        <li>Mention if you are a student, worker, or refugee claimant.</li>
-                        <li>Always double-check details on official IRCC sites.</li>
-                    </ul>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+        st.markdown(
+            f"""
+            <div class="mc-card">
+                <strong>{t("Tips for better answers")}</strong>
+                <ul style="padding-left:1.1rem;margin-top:0.4rem;">
+                    <li>{t("Ask one main question at a time.")}</li>
+                    <li>{t("Mention if you are a student, worker, or refugee claimant.")}</li>
+                    <li>{t("Always double-check details on official IRCC sites.")}</li>
+                </ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     if ask and user_question.strip():
         faq, score = best_faq_match(user_question)
 
-        # Try AI first
-        ai_answer, ai_error = generate_ai_answer(user_question, faq, language)
-
-        if "Amharic" in language:
-            st.markdown("### 🗣️ ጥያቄህ")
-        else:
-            st.markdown("### 🗣️ Your question")
+        st.markdown(f"### {t('🗣️ Your question')}")
         st.write(user_question)
 
-        if "Amharic" in language:
-            st.markdown("### 🤖 መልስ ከ MyCanada አስስታንት")
+        st.markdown(f"### {t('🤖 Assistant answer')}")
+        if faq:
+            answer = translate_dynamic(faq, "answer")
+            st.write(answer)
+            if faq.get("tags"):
+                st.markdown(
+                    " ".join(f'<span class="mc-chip">{t(tag)}</span>' for tag in faq["tags"]),
+                    unsafe_allow_html=True,
+                )
         else:
-            st.markdown("### 🤖 Assistant answer")
-
-        if ai_answer:
-            st.write(ai_answer)
-        else:
-            # Fallback: FAQ only
-            if ai_error:
-                st.info(ai_error)
-            if faq:
-                st.write(faq.get("answer", ""))
-                if faq.get("tags"):
-                    st.markdown(
-                        " ".join(f'<span class="mc-chip">{t}</span>' for t in faq["tags"]),
-                        unsafe_allow_html=True,
-                    )
-            else:
-                st.warning(
+            st.warning(
+                t(
                     "I could not find a close match in my current FAQ data. "
                     "Try rephrasing your question or selecting a guide on the **Immigration Guides** page."
                 )
+            )
 
-        # Transparency: show matched FAQ
+        st.markdown(f"### {t('🔍 Closest matched FAQ (for transparency)')}")
         if faq:
-            if "Amharic" in language:
-                st.markdown("### 🔍 በጣም ተመሳሳይ የተገኘው FAQ")
-            else:
-                st.markdown("### 🔍 Closest matched FAQ (for transparency)")
-            with st.expander("Show matched FAQ"):
-                st.write(f"**Matched question (similarity: {score:.2f})**")
-                st.write(faq.get("question", ""))
-
-    # Translation button for this page
-    translate_section_button(ask_intro_text, key="tr_ask")
+            with st.expander(t("Show matched FAQ")):
+                question_text = translate_dynamic(faq, "question")
+                st.write(f"**{t('Matched question (similarity: {score:.2f})').format(score=score):s}**")
+                st.write(question_text)
 
 
 # =========================================================
 # Page 2 – City & Province explorer
 # =========================================================
 
-elif page == "🏙️ Explore Cities & Provinces":
-    st.subheader("🏙️ Explore Cities & Provinces")
-
-    cities_intro_text = (
-        "Use the filters to compare cities and provinces across Canada for cost of living, "
-        "jobs, newcomer services, and family friendliness."
-    )
-    st.markdown(cities_intro_text)
+elif page_key == "cities":
+    st.subheader(t("🏙️ Explore Cities & Provinces"))
 
     if not cities:
-        st.error("No city data available. Please check `data/cities.json`.")
+        st.error(t("No city data available. Please check `data/cities.json`."))
     else:
         provinces = list_provinces()
         col_filters, col_cards = st.columns([1.2, 2.3])
 
         with col_filters:
             province_choice = st.selectbox(
-                "Select a province or territory",
+                t("Select a province or territory"),
                 options=["(all)"] + provinces,
             )
 
-            if "Amharic" in language:
-                focus_options = [
-                    "Affordability (ዋጋ ተመጣጣኝነት)",
-                    "Jobs & economy (ስራና ኢኮኖሚያዊ እድገት)",
-                    "Public transit (የሀገር መጓጓዣ)",
-                    "Student life (የተማሪ ሕይወት)",
-                    "Immigrant services (የአዲስ መጣ አገልግሎቶች)",
-                    "Family & schools (ቤተሰብና ትምህርት ቤቶች)",
-                ]
-            else:
-                focus_options = [
-                    "Affordability",
-                    "Jobs & economy",
-                    "Public transit",
-                    "Student life",
-                    "Immigrant services",
-                    "Family & schools",
-                ]
-
+            SETTLEMENT_OPTIONS = [
+                "Affordability",
+                "Jobs & economy",
+                "Public transit",
+                "Student life",
+                "Immigrant services",
+                "Family & schools",
+            ]
             settlement_focus = st.multiselect(
-                "What matters most to you?",
-                options=focus_options,
+                t("What matters most to you?"),
+                options=SETTLEMENT_OPTIONS,
+                format_func=lambda opt: t(opt),
             )
 
         with col_cards:
@@ -662,36 +522,30 @@ elif page == "🏙️ Explore Cities & Provinces":
             if province_choice != "(all)":
                 filtered = [c for c in filtered if c.get("province") == province_choice]
 
-            # Preferred region filter uses base region_label; we ignore Amharic text in label
-            base_regions = ["Atlantic", "Central", "Prairies", "West Coast", "North"]
-            selected_base_regions = []
-            for r in base_regions:
-                if any(r in pr for pr in preferred_region):
-                    selected_base_regions.append(r)
-
-            if selected_base_regions:
+            if preferred_region:
                 filtered = [
                     c
                     for c in filtered
-                    if c.get("region_label") in selected_base_regions or not c.get("region_label")
+                    if c.get("region_label") in preferred_region or not c.get("region_label")
                 ]
 
             if family_friendly:
                 filtered = [c for c in filtered if c.get("family_friendly", False)]
 
-            st.markdown(
-                f"Showing **{len(filtered)}** city(ies) that match your filters."
+            msg = t("Showing **{n}** city(ies) that match your filters.").format(
+                n=len(filtered)
             )
+            st.markdown(msg)
 
             if not filtered:
-                st.info("Try removing some filters to see more cities.")
+                st.info(t("Try removing some filters to see more cities."))
             else:
                 for city in filtered:
-                    name = city.get("name")
+                    name = translate_dynamic(city, "name") or city.get("name")
                     prov = city.get("province")
-                    region_label = city.get("region_label", "")
-                    summary = city.get("summary", "")
-                    newcomers = city.get("newcomer_support", "")
+                    region_label = translate_dynamic(city, "region_label")
+                    summary = translate_dynamic(city, "summary")
+                    newcomers = translate_dynamic(city, "newcomer_support")
                     key_sectors = city.get("key_sectors", [])
                     cost_level = city.get("cost_of_living", "Unknown")
                     transit = city.get("transit", "Unknown")
@@ -702,708 +556,103 @@ elif page == "🏙️ Explore Cities & Provinces":
                             <h3 style="margin-bottom:0.1rem;">{name}, {prov}</h3>
                             <p class="mc-muted" style="margin-top:0.1rem;">{region_label}</p>
                             <p style="margin-top:0.4rem;">{summary}</p>
-                            <p><strong>Newcomer services:</strong> {newcomers}</p>
+                            <p><strong>{t("Newcomer services:")}</strong> {newcomers}</p>
                             <p>
-                                <strong>Cost of living:</strong> {cost_level} &nbsp; • &nbsp;
-                                <strong>Transit:</strong> {transit}
+                                <strong>{t("Cost of living:")}</strong> {cost_level} &nbsp; • &nbsp;
+                                <strong>{t("Transit:")}</strong> {transit}
                             </p>
                             <p>
-                                {"".join(f'<span class="mc-pill">{sec}</span>' for sec in key_sectors)}
+                                {"".join(f'<span class="mc-pill">{t(sec)}</span>' for sec in key_sectors)}
                             </p>
                         </div>
                         """,
                         unsafe_allow_html=True,
                     )
 
-    translate_section_button(cities_intro_text, key="tr_cities")
-
 
 # =========================================================
-# Page 3 – Open a Bank Account
+# Page 3 – Immigration Guides
 # =========================================================
 
-elif page == "🏦 Open a Bank Account":
-    st.subheader("🏦 Open a Bank Account in Canada")
-
-    bank_intro_text = (
-        "Opening a bank account early helps you receive your salary, pay rent, and build credit.\n"
-        "Let’s go through the key steps together."
-    )
-    st.markdown(bank_intro_text)
-
-    location = st.text_input(
-        "Where are you right now? (city or postal code)",
-        placeholder="e.g., Toronto, ON or M5V 2T6",
-    )
-
-    bank_steps_text = """
-### 1. Key steps to open a basic chequing account
-
-1. **Choose a bank and account type** (e.g., newcomer chequing account, student account).  
-2. **Prepare your documents** (usually 2 pieces of ID):  
-   - Passport  
-   - Study permit / work permit / PR card  
-   - Proof of address (rental agreement, utility bill, official letter)  
-   - SIN (if you have it – not required to open an account, but often requested)  
-3. **Book an appointment or walk in** to a branch.  
-4. **Meet with a banking advisor** – they verify your ID, open your account, and give you a debit card.  
-5. **Set up online & mobile banking**, e-Transfers, and alerts.  
-6. (Optional) Ask about **credit card**, **overdraft**, and **newcomer welcome offers**.
-"""
-    st.markdown(bank_steps_text)
-
-    bank_programs_text = """
-### 2. Newcomer banking programs (Big 5 banks)
-
-Most major banks have **newcomer packages** with no-fee accounts for 6–12 months,
-free international transfers, or cash bonuses. Always check the latest details on their websites.
-"""
-    st.markdown(bank_programs_text)
-
-    bank_links = {
-        "RBC – Newcomers to Canada": "https://www.rbc.com/newcomers",
-        "TD – New to Canada Banking": "https://www.td.com/ca/en/personal-banking/solutions/new-to-canada",
-        "Scotiabank – StartRight® Program": "https://www.scotiabank.com/ca/en/personal/bank/bank-accounts/newcomers.html",
-        "CIBC – Newcomer Banking": "https://www.cibc.com/en/personal-banking/newcomers.html",
-        "BMO – NewStart® Program": "https://www.bmo.com/main/personal/bank-accounts/newcomers-to-canada",
-    }
-
-    for label, url in bank_links.items():
-        st.markdown(f"- [{label}]({url})")
-
-    st.markdown("### 3. Find branches near you")
-
-    if location.strip():
-        st.success("Here are quick links to find branches close to you on Google Maps:")
-
-        banks = ["RBC", "TD Bank", "Scotiabank", "CIBC", "BMO Bank of Montreal"]
-
-        for b in banks:
-            query = f"{b} near {location}"
-            url = maps_search_url(query)
-            st.markdown(f"- [{b} near {location}]({url})")
-
-        st.caption(
-            "Tip: When you open the map, you’ll see distance, directions, opening hours, and phone numbers."
-        )
-    else:
-        st.warning("Please type your city or postal code above so I can suggest nearby branches.")
-
-    # Translate this page to Amharic
-    bank_page_text_for_translation = (
-        bank_intro_text + "\n\n" + bank_steps_text + "\n\n" + bank_programs_text
-    )
-    translate_section_button(bank_page_text_for_translation, key="tr_bank")
-
-
-# =========================================================
-# Page 4 – Housing Search
-# =========================================================
-
-elif page == "🏡 Housing Search":
-    st.subheader("🏡 Rental Housing for Newcomers")
-
-    housing_intro_text = (
-        "Let’s explore rental options based on your city, budget, and type of place."
-    )
-    st.markdown(housing_intro_text)
-
-    accom_label = "Type of accommodation"
-    if "Amharic" in language:
-        accom_options = [
-            "Any (ማንኛውም)",
-            "Room in shared house (ክፍል በተጋራ ቤት)",
-            "Bachelor / studio (ባችለር / ስቱዲዮ)",
-            "1-bedroom apartment (1 መኝታ አፓርታማ)",
-            "2-bedroom apartment (2 መኝታ አፓርታማ)",
-            "Family-size house / townhouse (የቤተሰብ ቤት)",
-        ]
-    else:
-        accom_options = [
-            "Any",
-            "Room in shared house",
-            "Bachelor / studio",
-            "1-bedroom apartment",
-            "2-bedroom apartment",
-            "Family-size house / townhouse",
-        ]
-
-    city = st.text_input("Preferred city", placeholder="e.g., Ottawa, ON")
-    budget = st.slider(
-        "Approximate monthly budget (CAD)",
-        min_value=500,
-        max_value=4000,
-        value=1800,
-        step=50,
-    )
-    accom_type = st.selectbox(accom_label, accom_options)
-
-    housing_extra_text = ""
-    if city.strip():
-        st.markdown("### 1. Search rental listings (trusted platforms)")
-
-        city_q = city.strip()
-        # Base accommodation keyword for search (strip Amharic)
-        base_accom = accom_type.split("(")[0].strip()
-        search_phrase = (
-            f"rent {base_accom} {city_q}" if "Any" not in base_accom else f"rent apartment {city_q}"
-        )
-
-        links = {
-            "Rentals.ca": google_search_url(f"site:rentals.ca {search_phrase}"),
-            "Kijiji Rentals": google_search_url(f"site:kijiji.ca {search_phrase}"),
-            "Facebook Marketplace": "https://www.facebook.com/marketplace/search/?query="
-            + quote_plus(search_phrase),
-            "PadMapper / Zumper / Others": google_search_url(f"rentals {city_q} apartments"),
-        }
-
-        for label, url in links.items():
-            st.markdown(f"- [{label} – search for **{city_q}**]({url})")
-
-        st.markdown("### 2. Neighbourhood & rent guidance (approximate)")
-
-        low = max(400, budget - 400)
-        mid_low = max(500, budget - 200)
-        mid_high = budget + 200
-        high = budget + 500
-
-        housing_ranges_text = f"""
-These are very rough ranges you might see in many Canadian cities.  
-Actual prices vary a lot by city and neighbourhood:
-
-- Budget / shared options: ~${low}–${mid_low} / month  
-- Typical 1-bedroom: ~${mid_low}–${mid_high} / month  
-- Larger family units: ~${mid_high}–${high}+ / month  
-
-Use these numbers only as a starting point, and always confirm with the actual listing.
-"""
-        st.markdown(housing_ranges_text)
-
-        st.markdown("### 3. Transit & commute tips")
-
-        housing_transit_text = (
-            "When checking a listing, open it in Google Maps and look for:\n"
-            "- Distance to your school / workplace\n"
-            "- Bus / subway / LRT lines nearby\n"
-            "- Travel time during rush hour\n"
-            "- Walking distance to grocery stores and pharmacies"
-        )
-        st.info(housing_transit_text)
-
-        housing_extra_text = housing_ranges_text + "\n\n" + housing_transit_text
-    else:
-        st.warning("Please enter a city so I can tailor housing search links for you.")
-
-    housing_page_text_for_translation = housing_intro_text + "\n\n" + housing_extra_text
-    translate_section_button(housing_page_text_for_translation, key="tr_housing")
-
-
-# =========================================================
-# Page 5 – Employment Services (with resume upload)
-# =========================================================
-
-elif page == "💼 Employment Services":
-    st.subheader("💼 Find Jobs & Employment Support")
-
-    jobs_intro_text = (
-        "Let’s search for jobs and newcomer employment services that match your goals."
-    )
-    st.markdown(jobs_intro_text)
-
-    job_title = st.text_input(
-        "What type of job are you looking for?",
-        placeholder="e.g., Data analyst, PSW, warehouse worker, cashier",
-    )
-    job_city = st.text_input(
-        "Preferred city or region for work",
-        placeholder="e.g., Toronto, ON or Calgary, AB",
-    )
-
-    jobs_extra_text = ""
-    if job_title.strip() and job_city.strip():
-        q_job = job_title.strip()
-        q_city = job_city.strip()
-
-        st.markdown("### 1. Job postings on trusted Canadian platforms")
-
-        indeed_url = f"https://ca.indeed.com/jobs?q={quote_plus(q_job)}&l={quote_plus(q_city)}"
-        jobbank_url = (
-            "https://www.jobbank.gc.ca/jobsearch/jobsearch?"
-            f"searchstring={quote_plus(q_job)}&locationstring={quote_plus(q_city)}"
-        )
-        linkedin_url = (
-            "https://www.linkedin.com/jobs/search/?"
-            f"keywords={quote_plus(q_job)}&location={quote_plus(q_city)}"
-        )
-
-        st.markdown(f"- [Indeed – {q_job} in {q_city}]({indeed_url})")
-        st.markdown(f"- [Job Bank – {q_job} in {q_city}]({jobbank_url})")
-        st.markdown(f"- [LinkedIn Jobs – {q_job} in {q_city}]({linkedin_url})")
-
-        st.markdown("### 2. Match & relevance (how to judge a good posting)")
-
-        jobs_match_text = (
-            "Look for:\n"
-            "- Job title and duties similar to your skills\n"
-            "- Required experience close to your background\n"
-            "- Location and work arrangement (on-site / hybrid / remote)\n"
-            "- Salary range that fits your expectations\n"
-            "- Employer offering training or support for newcomers"
-        )
-        st.info(jobs_match_text)
-
-        st.markdown("### 3. Newcomer employment centres near you")
-
-        newcomer_query = f"employment services for newcomers near {q_city}"
-        newcomer_url = maps_search_url(newcomer_query)
-
-        st.markdown(
-            f"- [Newcomer employment & settlement services near {q_city}]({newcomer_url})"
-        )
-        centres_text = (
-            "These can include YMCA, COSTI, ACCES Employment, immigrant settlement agencies, "
-            "and community organizations that help with resumes, networking, and interview practice."
-        )
-        st.caption(centres_text)
-
-        st.markdown("### 4. Resume & interview tips (tailored to your role)")
-
-        jobs_resume_tips_text = (
-            f"For {q_job} roles, try to:\n"
-            "- Highlight your most recent work experience that matches the job duties\n"
-            "- Use Canadian-style resume format (1–2 pages, no photo, clear bullet points)\n"
-            "- Add quantified results (e.g., 'reduced processing time by 20%') where possible\n"
-            "- Practice answers to common questions such as:\n"
-            "  - 'Tell me about yourself'\n"
-            "  - 'Why do you want this role?'\n"
-            "  - 'Tell me about a time you solved a problem at work'\n"
-        )
-        st.write(jobs_resume_tips_text)
-
-        jobs_extra_text = jobs_match_text + "\n\n" + centres_text + "\n\n" + jobs_resume_tips_text
-    else:
-        st.warning("Please enter both a job type and a city so I can build search links for you.")
-
-    # --- Resume upload & AI revision ---
-    st.markdown("### 5. Upload your resume for AI review (beta)")
-
-    st.caption(
-        "Upload a simple text version (.txt) of your resume. "
-        "The assistant will suggest a Canadian-style summary and key bullet points."
-    )
-
-    uploaded_resume = st.file_uploader(
-        "Upload your resume file (.txt)",
-        type=["txt"],
-    )
-    target_job_title = st.text_input(
-        "Target job title in Canada (for tailoring)",
-        value=job_title or "",
-    )
-    target_job_city = st.text_input(
-        "City/region where you want to work (for tailoring)",
-        value=job_city or "",
-    )
-    resume_notes = st.text_area(
-        "Anything special you want to highlight? (e.g., gaps, volunteering, language skills)",
-        placeholder="Optional but helpful context for tailoring your resume...",
-    )
-
-    if st.button("Generate improved resume suggestions", key="resume_ai_button"):
-        if uploaded_resume is None:
-            st.warning("Please upload a .txt resume file first.")
-        else:
-            raw_bytes = uploaded_resume.read()
-            try:
-                resume_text = raw_bytes.decode("utf-8", errors="ignore")
-            except Exception:
-                resume_text = str(raw_bytes)
-
-            with st.spinner("Reviewing your resume with AI..."):
-                improved_resume, resume_err = improve_resume_with_ai(
-                    resume_text, target_job_title, target_job_city, resume_notes
-                )
-
-            if improved_resume:
-                st.markdown("#### AI-powered resume suggestions")
-                st.write(improved_resume)
-                st.caption(
-                    "These are suggestions only. Always review and edit your resume yourself "
-                    "before applying to jobs."
-                )
-            else:
-                st.warning(resume_err or "Something went wrong while revising your resume.")
-
-    # Translate jobs page text to Amharic
-    jobs_page_text_for_translation = jobs_intro_text + "\n\n" + jobs_extra_text
-    translate_section_button(jobs_page_text_for_translation, key="tr_jobs")
-
-
-# =========================================================
-# Page 6 – Places of Worship
-# =========================================================
-
-elif page == "🛕 Places of Worship":
-    st.subheader("🛕 Find a Place of Worship or Spiritual Community")
-
-    worship_intro_text = (
-        "Search for churches, mosques, temples, synagogues, and other spiritual centres "
-        "near your new home in Canada."
-    )
-    st.markdown(worship_intro_text)
-
-    if "Amharic" in language:
-        worship_options = [
-            "Christian church (ክርስቲያናዊ ቤተ ክርስቲያን)",
-            "Muslim mosque (መስጊድ)",
-            "Jewish synagogue (ሲናጎግ)",
-            "Hindu temple (የሂንዱ ጣቢያ)",
-            "Buddhist temple (የቡድሂስት ጣቢያ)",
-            "Sikh gurdwara (ጉርድዋራ)",
-            "Other / interfaith centre (ሌላ  spiritual centre)",
-        ]
-    else:
-        worship_options = [
-            "Christian church",
-            "Muslim mosque",
-            "Jewish synagogue",
-            "Hindu temple",
-            "Buddhist temple",
-            "Sikh gurdwara",
-            "Other / interfaith centre",
-        ]
-
-    worship_type = st.selectbox(
-        "What type of worship place are you looking for?",
-        worship_options,
-    )
-
-    worship_city = st.text_input(
-        "Your city or postal code",
-        placeholder="e.g., Winnipeg, MB or H3Z 2Y7",
-    )
-
-    if worship_city.strip():
-        label_map = {
-            "Christian church": "church",
-            "Muslim mosque": "mosque",
-            "Jewish synagogue": "synagogue",
-            "Hindu temple": "hindu temple",
-            "Buddhist temple": "buddhist temple",
-            "Sikh gurdwara": "gurdwara",
-            "Other / interfaith centre": "spiritual centre",
-        }
-        # Extract English base key from label
-        base_type = worship_type.split("(")[0].strip()
-        place_keyword = label_map.get(base_type, "church")
-
-        query = f"{place_keyword} near {worship_city.strip()}"
-        url = maps_search_url(query)
-
-        st.markdown("### Nearest worship centres")
-
-        st.markdown(
-            f"- See {worship_type} locations near {worship_city.strip()} on Google Maps: [{worship_city.strip()}]({url})"
-        )
-        st.caption(
-            "On the map you’ll see distance, service times, website links, and phone numbers "
-            "for many places of worship. You can also read reviews and see photos."
-        )
-
-        st.info(
-            "If you prefer a specific language (e.g., Amharic, Arabic, Spanish), you can add it to your search "
-            "query in Google Maps for more tailored results."
-        )
-    else:
-        st.warning("Please enter your city or postal code so I can locate nearby places of worship.")
-
-    translate_section_button(worship_intro_text, key="tr_worship")
-
-
-# =========================================================
-# Page 7 – Food & Cultural Community Support
-# =========================================================
-
-elif page == "🥘 Food & Cultural Community Support":
-    st.subheader("🥘 Find Your Food, Culture & Community")
-
-    food_intro_text = (
-        "Find grocery stores, restaurants, cultural associations, and community groups "
-        "that connect you with your home culture and new friends in Canada."
-    )
-    st.markdown(food_intro_text)
-
-    origin_country = st.text_input(
-        "Which country or culture do you identify with most?",
-        placeholder="e.g., Ethiopia, India, Philippines, Brazil",
-    )
-    food_city = st.text_input(
-        "Where are you living now? (city or postal code)",
-        placeholder="e.g., Surrey, BC or M1P 4P5",
-    )
-
-    extra_food_text = ""
-    if origin_country.strip() and food_city.strip():
-        o = origin_country.strip()
-        c = food_city.strip()
-
-        st.markdown("### 1. Grocery stores with your traditional foods")
-
-        grocery_query = f"{o} grocery store near {c}"
-        grocery_url = maps_search_url(grocery_query)
-        st.markdown(f"- [Stores selling {o} foods near {c}]({grocery_url})")
-
-        st.markdown("### 2. Cultural associations & community groups")
-
-        assoc_query = f"{o} community association near {c}"
-        assoc_url = google_search_url(assoc_query)
-        st.markdown(f"- [Cultural associations and community groups]({assoc_url})")
-
-        st.markdown("### 3. Restaurants, cafés, and local events")
-
-        rest_query = f"{o} restaurant near {c}"
-        rest_url = maps_search_url(rest_query)
-        events_query = f"{o} cultural events {c}"
-        events_url = google_search_url(events_query)
-
-        st.markdown(f"- [Restaurants & cafés serving {o} food near {c}]({rest_url})")
-        st.markdown(f"- [Local cultural events and festivals]({events_url})")
-
-        extra_food_text = (
-            "Grocery stores and restaurants help you access familiar ingredients and dishes. "
-            "Cultural associations and events can connect you with language schools, youth programs, "
-            "and holiday celebrations."
-        )
-
-        st.caption(
-            "On these pages you'll usually find opening hours, phone numbers, websites, and directions. "
-            "Many communities also organize language schools, youth programs, and holiday celebrations."
-        )
-
-        st.info(
-            "You are not alone. Connecting with people from your culture and new Canadian friends can "
-            "make your first months much easier and warmer."
-        )
-    else:
-        st.warning("Please fill in both your country/culture and your current city/postal code.")
-
-    translate_section_button(food_intro_text + "\n\n" + extra_food_text, key="tr_food")
-
-
-# =========================================================
-# Page 8 – Legal & Immigration Help
-# =========================================================
-
-elif page == "⚖️ Legal & Immigration Help":
-    st.subheader("⚖️ Legal & Immigration Help (Information Only)")
-
-    legal_intro_text = """
-Getting the right legal and immigration advice is important, especially for
-complex situations (refugee claims, inadmissibility, appeals, removals, etc.).
-This page gives you steps to find qualified help. It does not provide legal advice.
-"""
-    st.markdown(legal_intro_text)
-
-    st.markdown("### 1. Steps to find a legal advisor")
-
-    legal_steps_text = """
-1. Decide what help you need  
-   - General immigration questions  
-   - Refugee/PR applications  
-   - Detention, hearings, or appeals  
-
-2. Look for licensed representatives  
-   In Canada, immigration representatives must usually be:  
-   - A lawyer in good standing with a provincial/territorial law society  
-   - A licensed immigration consultant (CICC member)  
-   - In some cases, a supervised law student or paralegal  
-
-3. Check they are authorized  
-   - Use official directories (law society, CICC, or IRCC lists)  
-   - Make sure their name and license number match  
-
-4. Book a consultation  
-   - Ask about fees, timelines, and what they need from you  
-   - Bring all documents: permits, refusal letters, emails from IRCC, etc.  
-
-5. Get everything in writing  
-   - Written retainer/contract, fee structure, and receipts  
-   - Keep copies of all forms your representative submits on your behalf
-"""
-    st.markdown(legal_steps_text)
-
-    st.markdown("### 2. Official directories & tools")
-
-    st.markdown(
-        "- [IRCC – Find out if your representative is authorized](https://www.canada.ca/en/immigration-refugees-citizenship/services/immigration-citizenship-representative/choose.html)\n"
-        "- [College of Immigration and Citizenship Consultants (CICC) public register](https://college-ic.ca)\n"
-        "- Provincial law societies (e.g., Law Society of Ontario, Barreau du Québec, etc.)"
-    )
-
-    st.markdown("### 3. Sample list of IRCC-style authorized representatives (demo only)")
-
-    st.caption(
-        "These are sample records only to show how a future database connection might look. "
-        "They are not real recommendations."
-    )
-
-    sample_reps = [
-        {
-            "name": "Alemu Legal Services (Sample)",
-            "type": "Immigration Lawyer",
-            "city": "Toronto, ON",
-            "contact": "info@alemu-legal-sample.ca",
-            "license": "LSO-123456 (DEMO)",
-        },
-        {
-            "name": "NewLeaf Immigration Consulting (Sample)",
-            "type": "Immigration Consultant (RCIC)",
-            "city": "Calgary, AB",
-            "contact": "contact@newleaf-rcic-sample.ca",
-            "license": "CICC-R000000 (DEMO)",
-        },
-        {
-            "name": "Hope Refugee Law Clinic (Sample)",
-            "type": "Community Legal Clinic",
-            "city": "Vancouver, BC",
-            "contact": "clinic@hope-refugee-sample.ca",
-            "license": "Clinic ID-0001 (DEMO)",
-        },
-    ]
-
-    for rep in sample_reps:
-        st.markdown(
-            f"""
-            **{rep['name']}**  
-            • Type: {rep['type']}  
-            • Location: {rep['city']}  
-            • Contact: {rep['contact']}  
-            • License / ID: {rep['license']}
-            """
-        )
-
-    st.caption(
-        "In a future version, this section can be replaced with a real database of nearby, "
-        "verified representatives filtered by your postal code."
-    )
-
-    st.markdown("### 4. Find immigration lawyers or consultants near you")
-
-    legal_city = st.text_input(
-        "Your city or postal code (to search for local lawyers/consultants)",
-        placeholder="e.g., Toronto, ON or M2M 3X9",
-    )
-
-    if legal_city.strip():
-        q_city = legal_city.strip()
-        search_lawyer_url = google_search_url(f"immigration lawyer near {q_city}")
-        search_consultant_url = google_search_url(f"immigration consultant RCIC near {q_city}")
-        search_clinic_url = google_search_url(f"legal aid immigration clinic near {q_city}")
-
-        st.markdown(f"- [Immigration lawyers near {q_city}]({search_lawyer_url})")
-        st.markdown(f"- [Licensed immigration consultants (RCIC) near {q_city}]({search_consultant_url})")
-        st.markdown(f"- [Community legal clinics / legal aid near {q_city}]({search_clinic_url})")
-
-        st.info(
-            "When you contact someone, ask if they offer free or low-cost initial consultations. "
-            "If you have low income, ask about legal aid in your province."
-        )
-    else:
-        st.warning("Enter your city or postal code to build local search links for legal help.")
-
-    legal_page_text_for_translation = legal_intro_text + "\n\n" + legal_steps_text
-    translate_section_button(legal_page_text_for_translation, key="tr_legal")
-
-
-# =========================================================
-# Page 9 – Immigration Guides
-# =========================================================
-
-elif page == "📚 Immigration Guides":
-    st.subheader("📚 Immigration & Settlement Guides")
-
-    guides_intro_text = (
-        "Browse short guides on topics like study permits, work permits, permanent residence, "
-        "and first steps after landing in Canada."
-    )
-    st.markdown(guides_intro_text)
+elif page_key == "guides":
+    st.subheader(t("📚 Immigration & Settlement Guides"))
 
     if not guides:
-        st.error("No guide data available. Please check `data/immigration_guides.json`.")
+        st.error(t("No guide data available. Please check `data/immigration_guides.json`."))
     else:
-        topics = [g.get("topic") for g in guides]
-        topic_choice = st.selectbox("Select a topic", topics)
+        topics = [translate_dynamic(g, "topic") or g.get("topic") for g in guides]
+        # Keep internal id as original topic
+        topic_ids = [g.get("topic") for g in guides]
+
+        topic_choice = st.selectbox(
+            t("Select a topic"),
+            options=topic_ids,
+            format_func=lambda topic_id: translate_dynamic(
+                next(g for g in guides if g.get("topic") == topic_id), "topic"
+            )
+            or topic_id,
+        )
 
         guide = get_guide_by_topic(topic_choice)
 
         if guide:
-            st.markdown(f"## {guide.get('topic')}")
-            st.write(guide.get("summary", ""))
+            title = translate_dynamic(guide, "topic")
+            summary = translate_dynamic(guide, "summary")
+
+            st.markdown(f"## {title}")
+            st.write(summary)
 
             steps = guide.get("steps", [])
-            extra_guide_text = ""
             if steps:
-                st.markdown("### Key steps")
+                st.markdown(f"### {t('Key steps')}")
                 for i, s in enumerate(steps, start=1):
+                    # Optionally support translated step_i keys later
                     st.markdown(f"{i}. {s}")
-                extra_guide_text = "\n".join(steps)
 
             links = guide.get("links", [])
             if links:
-                st.markdown("### Helpful links")
+                st.markdown(f"### {t('Helpful links')}")
                 for link in links:
                     label = link.get("label", "Link")
                     url = link.get("url", "#")
                     st.markdown(f"- [{label}]({url})")
 
             st.caption(
-                "Always verify with official Government of Canada / provincial websites, "
-                "especially for legal deadlines, forms, and required documents."
+                t(
+                    "Always verify with official Government of Canada / provincial websites, "
+                    "especially for legal deadlines, forms, and required documents."
+                )
             )
-
-            translate_section_button(
-                guides_intro_text + "\n\n" + guide.get("summary", "") + "\n\n" + extra_guide_text,
-                key="tr_guides",
-            )
-        else:
-            translate_section_button(guides_intro_text, key="tr_guides_empty")
 
 
 # =========================================================
-# Page 10 – About
+# Page 4 – About
 # =========================================================
 
-elif page == "ℹ️ About this App":
-    st.subheader("ℹ️ About MyCanada – Newcomer AI Assistant")
+elif page_key == "about":
+    st.subheader(t("ℹ️ About MyCanada – Newcomer AI Assistant"))
 
-    about_text = """
-This starter app is designed as a lightweight, extensible Streamlit dashboard
-to support newcomers in understanding:
+    # For now, About text is English-only; you can later break into smaller strings and
+    # add them to TRANSLATIONS["fr"] / ["am"] if you want full translation.
+    st.markdown(
+        """
+        This starter app is designed as a **lightweight, extensible Streamlit dashboard**
+        to support newcomers in understanding:
 
-- Basic immigration FAQs (study permits, PR, work permits)
-- City & province options across Canada
-- Banking, housing, jobs, worship, and cultural supports
-- Practical first-steps guides for arrival and settlement
+        - Basic **immigration FAQs** (study permits, PR, work permits)
+        - **City & province options** across Canada
+        - Practical **first-steps guides** for arrival and settlement
 
-It also includes early AI-powered features like:
-- Tailored Q&A responses using an LLM (if configured)
-- Resume review suggestions for Canadian-style applications
-- Page-level translation to Amharic (አማርኛ) for key sections
+        ### How you can extend this
 
-How you can extend this:
+        - Plug in richer FAQ content from official newcomer services
+        - Add more cities, regions, and filters (e.g., rent levels, industry clusters)
+        - Integrate external LLMs (OpenAI, etc.) via `st.secrets` for smarter answers
+        - Localize content in French, Amharic, Arabic, etc.
 
-- Plug in richer FAQ content from official newcomer services
-- Add more structured data for neighbourhoods, rents, and transit
-- Integrate external LLMs (OpenAI, etc.) via st.secrets for smarter answers
-- Use real APIs (e.g., job boards, housing platforms, map services) instead of search links
-- Connect a real database of IRCC-authorized representatives for the legal help page
-- Localize content in French, Amharic, Arabic, etc.
+        ### Disclaimer
 
-Disclaimer:
-
-This tool is for information and orientation only.  
-It does not provide legal, immigration, or financial advice.
-"""
-    st.markdown(about_text)
-
-    translate_section_button(about_text, key="tr_about")
+        This tool is for **information and orientation only**.  
+        It does **not** provide legal, immigration, or financial advice.
+        """
+    )
