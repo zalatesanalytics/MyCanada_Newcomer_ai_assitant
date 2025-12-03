@@ -165,7 +165,6 @@ def generate_ai_answer(user_question: str, faq: dict | None, language: str):
     )
 
     try:
-        # Using ChatCompletion from openai~=0.x
         response = client.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
@@ -178,6 +177,91 @@ def generate_ai_answer(user_question: str, faq: dict | None, language: str):
         return answer, None
     except Exception as e:
         return None, f"AI error: {e}"
+
+
+def translate_to_amharic(text: str):
+    """
+    Translate English content to Amharic using OpenAI, if configured.
+    Returns (translation or None, error_message or None).
+    """
+    client = get_openai_client()
+    if client is None:
+        return None, "Translation not available; AI is not configured."
+
+    system_msg = (
+        "You are a professional translator. Translate the following Canadian newcomer "
+        "support content from English into clear, simple Amharic (አማርኛ). Preserve lists "
+        "and structure, keep organization names and URLs in English where appropriate."
+    )
+
+    try:
+        response = client.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": text},
+            ],
+            temperature=0.3,
+        )
+        translated = response.choices[0].message["content"]
+        return translated, None
+    except Exception as e:
+        return None, f"Translation error: {e}"
+
+
+def translate_section_button(section_text: str, key: str):
+    """
+    Render a 'Translate this page to Amharic' button and show translation if clicked.
+    """
+    if st.button("Translate this page to Amharic (አማርኛ)", key=key):
+        with st.spinner("Translating to Amharic..."):
+            translated, err = translate_to_amharic(section_text)
+        if translated:
+            st.markdown("#### በአማርኛ ትርጉም")
+            st.write(translated)
+        else:
+            st.warning(err or "Translation not available.")
+
+
+def improve_resume_with_ai(resume_text: str, job_title: str, city: str, extra_notes: str):
+    """
+    Use OpenAI to suggest an improved, Canadian-style resume summary & bullet points.
+    """
+    client = get_openai_client()
+    if client is None:
+        return None, "AI is not configured; cannot revise resume right now."
+
+    system_msg = (
+        "You are a Canadian newcomer employment coach and resume expert. "
+        "Rewrite and improve the user's resume content into a Canadian-style resume. "
+        "Keep it professional, concise, and tailored to the target job and city. "
+        "Do not invent experience; reorganize and highlight what's already there. "
+        "Return:\n"
+        "- A short professional summary (2–3 sentences)\n"
+        "- 6–10 bullet points of key achievements/skills\n"
+        "- 3 customized suggestions for improvement (not full text)."
+    )
+
+    user_msg = (
+        f"Target job in Canada: {job_title or 'Not specified'}\n"
+        f"Preferred city/region: {city or 'Not specified'}\n"
+        f"User notes / things to highlight: {extra_notes or 'None'}\n\n"
+        f"Original resume text:\n{resume_text}\n"
+    )
+
+    try:
+        response = client.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.5,
+        )
+        improved = response.choices[0].message["content"]
+        return improved, None
+    except Exception as e:
+        return None, f"Resume AI error: {e}"
 
 
 # =========================================================
@@ -279,7 +363,6 @@ st.markdown(
         background-color: #fee2e2;
         color: #b91c1c;
         font-size: 0.75rem;
-        font-weight: 600;
         margin-right: 0.3rem;
         margin-bottom: 0.2rem;
     }
@@ -336,6 +419,7 @@ page = st.sidebar.radio(
         "💼 Employment Services",
         "🛕 Places of Worship",
         "🥘 Food & Cultural Community Support",
+        "⚖️ Legal & Immigration Help",
         "📚 Immigration Guides",
         "ℹ️ About this App",
     ],
@@ -554,41 +638,40 @@ elif page == "🏙️ Explore Cities & Provinces":
 elif page == "🏦 Open a Bank Account":
     st.subheader("🏦 Open a Bank Account in Canada")
 
-    st.markdown(
-        """
-        Opening a bank account early helps you **receive your salary, pay rent, and build credit**.
-        Let’s go through the key steps together.
-        """
+    bank_intro_text = (
+        "Opening a bank account early helps you **receive your salary, pay rent, and build credit**.\n"
+        "Let’s go through the key steps together."
     )
+    st.markdown(bank_intro_text)
 
     location = st.text_input(
         "Where are you right now? (city or postal code)",
         placeholder="e.g., Toronto, ON or M5V 2T6",
     )
 
-    st.markdown("### 1. Key steps to open a basic chequing account")
+    bank_steps_text = """
+### 1. Key steps to open a basic chequing account
 
-    st.markdown(
-        """
-        1. **Choose a bank and account type** (e.g., newcomer chequing account, student account).  
-        2. **Prepare your documents** (usually 2 pieces of ID):  
-           - Passport  
-           - Study permit / work permit / PR card  
-           - Proof of address (rental agreement, utility bill, official letter)  
-           - SIN (if you have it – not required to open an account, but often requested)  
-        3. **Book an appointment or walk in** to a branch.  
-        4. **Meet with a banking advisor** – they verify your ID, open your account, and give you a debit card.  
-        5. **Set up online & mobile banking**, e-Transfers, and alerts.  
-        6. (Optional) Ask about **credit card**, **overdraft**, and **newcomer welcome offers**.
-        """
-    )
+1. **Choose a bank and account type** (e.g., newcomer chequing account, student account).  
+2. **Prepare your documents** (usually 2 pieces of ID):  
+   - Passport  
+   - Study permit / work permit / PR card  
+   - Proof of address (rental agreement, utility bill, official letter)  
+   - SIN (if you have it – not required to open an account, but often requested)  
+3. **Book an appointment or walk in** to a branch.  
+4. **Meet with a banking advisor** – they verify your ID, open your account, and give you a debit card.  
+5. **Set up online & mobile banking**, e-Transfers, and alerts.  
+6. (Optional) Ask about **credit card**, **overdraft**, and **newcomer welcome offers**.
+"""
+    st.markdown(bank_steps_text)
 
-    st.markdown("### 2. Newcomer banking programs (Big 5 banks)")
+    bank_programs_text = """
+### 2. Newcomer banking programs (Big 5 banks)
 
-    st.info(
-        "Most major banks have **newcomer packages** with no-fee accounts for 6–12 months, "
-        "free international transfers, or cash bonuses. Always check the latest details on their websites."
-    )
+Most major banks have **newcomer packages** with no-fee accounts for 6–12 months,
+free international transfers, or cash bonuses. Always check the latest details on their websites.
+"""
+    st.markdown(bank_programs_text)
 
     bank_links = {
         "RBC – Newcomers to Canada": "https://www.rbc.com/newcomers",
@@ -619,6 +702,13 @@ elif page == "🏦 Open a Bank Account":
     else:
         st.warning("Please type your city or postal code above so I can suggest nearby branches.")
 
+    # Translate this page to Amharic
+    bank_page_text_for_translation = (
+        bank_intro_text + "\n\n" + bank_steps_text + "\n\n" + bank_programs_text
+    )
+    translate_section_button(bank_page_text_for_translation, key="tr_bank")
+
+
 # =========================================================
 # Page 4 – Housing Search
 # =========================================================
@@ -626,9 +716,10 @@ elif page == "🏦 Open a Bank Account":
 elif page == "🏡 Housing Search":
     st.subheader("🏡 Rental Housing for Newcomers")
 
-    st.markdown(
+    housing_intro_text = (
         "Let’s explore rental options based on your **city, budget, and type of place**."
     )
+    st.markdown(housing_intro_text)
 
     city = st.text_input("Preferred city", placeholder="e.g., Ottawa, ON")
     budget = st.slider(
@@ -650,6 +741,7 @@ elif page == "🏡 Housing Search":
         ],
     )
 
+    housing_extra_text = ""
     if city.strip():
         st.markdown("### 1. Search rental listings (trusted platforms)")
 
@@ -674,41 +766,48 @@ elif page == "🏡 Housing Search":
         mid_high = budget + 200
         high = budget + 500
 
-        st.markdown(
-            f"""
-            These are **very rough ranges** you might see in many Canadian cities.  
-            Actual prices vary a lot by city and neighbourhood:
+        housing_ranges_text = f"""
+These are **very rough ranges** you might see in many Canadian cities.  
+Actual prices vary a lot by city and neighbourhood:
 
-            - **Budget / shared options**: ~${low}–${mid_low} / month  
-            - **Typical 1-bedroom**: ~${mid_low}–${mid_high} / month  
-            - **Larger family units**: ~${mid_high}–${high}+ / month  
+- **Budget / shared options**: ~${low}–${mid_low} / month  
+- **Typical 1-bedroom**: ~${mid_low}–${mid_high} / month  
+- **Larger family units**: ~${mid_high}–${high}+ / month  
 
-            Use these numbers only as a **starting point**, and always confirm with the actual listing.
-            """
-        )
+Use these numbers only as a **starting point**, and always confirm with the actual listing.
+"""
+        st.markdown(housing_ranges_text)
 
         st.markdown("### 3. Transit & commute tips")
 
-        st.info(
+        housing_transit_text = (
             "When checking a listing, open it in Google Maps and look for:\n"
             "- Distance to your school / workplace\n"
             "- Bus / subway / LRT lines nearby\n"
             "- Travel time during rush hour\n"
             "- Walking distance to grocery stores and pharmacies"
         )
+        st.info(housing_transit_text)
+
+        housing_extra_text = housing_ranges_text + "\n\n" + housing_transit_text
     else:
         st.warning("Please enter a city so I can tailor housing search links for you.")
 
+    housing_page_text_for_translation = housing_intro_text + "\n\n" + housing_extra_text
+    translate_section_button(housing_page_text_for_translation, key="tr_housing")
+
+
 # =========================================================
-# Page 5 – Employment Services
+# Page 5 – Employment Services (with resume upload)
 # =========================================================
 
 elif page == "💼 Employment Services":
     st.subheader("💼 Find Jobs & Employment Support")
 
-    st.markdown(
+    jobs_intro_text = (
         "Let’s search for jobs and newcomer employment services that match your goals."
     )
+    st.markdown(jobs_intro_text)
 
     job_title = st.text_input(
         "What type of job are you looking for?",
@@ -719,6 +818,7 @@ elif page == "💼 Employment Services":
         placeholder="e.g., Toronto, ON or Calgary, AB",
     )
 
+    jobs_extra_text = ""
     if job_title.strip() and job_city.strip():
         q_job = job_title.strip()
         q_city = job_city.strip()
@@ -741,7 +841,7 @@ elif page == "💼 Employment Services":
 
         st.markdown("### 2. Match & relevance (how to judge a good posting)")
 
-        st.info(
+        jobs_match_text = (
             "Look for:\n"
             "- Job title and duties similar to your skills\n"
             "- Required experience close to your background\n"
@@ -749,6 +849,7 @@ elif page == "💼 Employment Services":
             "- Salary range that fits your expectations\n"
             "- Employer offering training or support for newcomers"
         )
+        st.info(jobs_match_text)
 
         st.markdown("### 3. Newcomer employment centres near you")
 
@@ -758,14 +859,15 @@ elif page == "💼 Employment Services":
         st.markdown(
             f"- [Newcomer employment & settlement services near {q_city}]({newcomer_url})"
         )
-        st.caption(
+        centres_text = (
             "These can include YMCA, COSTI, ACCES Employment, immigrant settlement agencies, "
             "and community organizations that help with resumes, networking, and interview practice."
         )
+        st.caption(centres_text)
 
         st.markdown("### 4. Resume & interview tips (tailored to your role)")
 
-        st.write(
+        jobs_resume_tips_text = (
             f"For **{q_job}** roles, try to:\n"
             "- Highlight your most recent **work experience** that matches the job duties\n"
             "- Use **Canadian-style resume format** (1–2 pages, no photo, clear bullet points)\n"
@@ -775,8 +877,66 @@ elif page == "💼 Employment Services":
             "  - 'Why do you want this role?'\n"
             "  - 'Tell me about a time you solved a problem at work'\n"
         )
+        st.write(jobs_resume_tips_text)
+
+        jobs_extra_text = jobs_match_text + "\n\n" + centres_text + "\n\n" + jobs_resume_tips_text
     else:
         st.warning("Please enter both a job type and a city so I can build search links for you.")
+
+    # --- Resume upload & AI revision ---
+    st.markdown("### 5. Upload your resume for AI review (beta)")
+
+    st.caption(
+        "Upload a simple **text version (.txt)** of your resume. "
+        "The assistant will suggest a Canadian-style summary and key bullet points."
+    )
+
+    uploaded_resume = st.file_uploader(
+        "Upload your resume file (.txt)",
+        type=["txt"],
+    )
+    target_job_title = st.text_input(
+        "Target job title in Canada (for tailoring)",
+        value=job_title or "",
+    )
+    target_job_city = st.text_input(
+        "City/region where you want to work (for tailoring)",
+        value=job_city or "",
+    )
+    resume_notes = st.text_area(
+        "Anything special you want to highlight? (e.g., gaps, volunteering, language skills)",
+        placeholder="Optional but helpful context for tailoring your resume...",
+    )
+
+    if st.button("Generate improved resume suggestions", key="resume_ai_button"):
+        if uploaded_resume is None:
+            st.warning("Please upload a .txt resume file first.")
+        else:
+            raw_bytes = uploaded_resume.read()
+            try:
+                resume_text = raw_bytes.decode("utf-8", errors="ignore")
+            except Exception:
+                resume_text = str(raw_bytes)
+
+            with st.spinner("Reviewing your resume with AI..."):
+                improved_resume, resume_err = improve_resume_with_ai(
+                    resume_text, target_job_title, target_job_city, resume_notes
+                )
+
+            if improved_resume:
+                st.markdown("#### AI-powered resume suggestions")
+                st.write(improved_resume)
+                st.caption(
+                    "These are **suggestions only**. Always review and edit your resume yourself "
+                    "before applying to jobs."
+                )
+            else:
+                st.warning(resume_err or "Something went wrong while revising your resume.")
+
+    # Translate jobs page text to Amharic
+    jobs_page_text_for_translation = jobs_intro_text + "\n\n" + jobs_extra_text
+    translate_section_button(jobs_page_text_for_translation, key="tr_jobs")
+
 
 # =========================================================
 # Page 6 – Places of Worship
@@ -889,7 +1049,132 @@ elif page == "🥘 Food & Cultural Community Support":
         st.warning("Please fill in both your country/culture and your current city/postal code.")
 
 # =========================================================
-# Page 8 – Immigration Guides
+# Page 8 – Legal & Immigration Help
+# =========================================================
+
+elif page == "⚖️ Legal & Immigration Help":
+    st.subheader("⚖️ Legal & Immigration Help (Information Only)")
+
+    legal_intro_text = """
+Getting the right **legal and immigration advice** is important, especially for
+complex situations (refugee claims, inadmissibility, appeals, removals, etc.).
+This page gives you steps to find qualified help. It does **not** provide legal advice.
+"""
+    st.markdown(legal_intro_text)
+
+    st.markdown("### 1. Steps to find a legal advisor")
+
+    legal_steps_text = """
+1. **Decide what help you need**  
+   - General immigration questions  
+   - Refugee/PR applications  
+   - Detention, hearings, or appeals  
+
+2. **Look for licensed representatives**  
+   In Canada, immigration representatives must usually be:  
+   - A lawyer in good standing with a **provincial/territorial law society**  
+   - A licensed immigration consultant (CICC member)  
+   - In some cases, a supervised law student or paralegal  
+
+3. **Check they are authorized**  
+   - Use official directories (law society, CICC, or IRCC lists)  
+   - Make sure their name and license number match  
+
+4. **Book a consultation**  
+   - Ask about fees, timelines, and what they need from you  
+   - Bring all documents: permits, refusal letters, emails from IRCC, etc.  
+
+5. **Get everything in writing**  
+   - Written retainer/contract, fee structure, and receipts  
+   - Keep copies of all forms your representative submits on your behalf
+"""
+    st.markdown(legal_steps_text)
+
+    st.markdown("### 2. Official directories & tools")
+
+    st.markdown(
+        "- [IRCC – Find out if your representative is authorized](https://www.canada.ca/en/immigration-refugees-citizenship/services/immigration-citizenship-representative/choose.html)\n"
+        "- [College of Immigration and Citizenship Consultants (CICC) public register](https://college-ic.ca)\n"
+        "- Provincial law societies (e.g., Law Society of Ontario, Barreau du Québec, etc.)"
+    )
+
+    st.markdown("### 3. Sample list of IRCC-style authorized representatives (demo only)")
+
+    st.caption(
+        "These are **sample records only** to show how a future database connection might look. "
+        "They are not real recommendations."
+    )
+
+    sample_reps = [
+        {
+            "name": "Alemu Legal Services (Sample)",
+            "type": "Immigration Lawyer",
+            "city": "Toronto, ON",
+            "contact": "info@alemu-legal-sample.ca",
+            "license": "LSO-123456 (DEMO)",
+        },
+        {
+            "name": "NewLeaf Immigration Consulting (Sample)",
+            "type": "Immigration Consultant (RCIC)",
+            "city": "Calgary, AB",
+            "contact": "contact@newleaf-rcic-sample.ca",
+            "license": "CICC-R000000 (DEMO)",
+        },
+        {
+            "name": "Hope Refugee Law Clinic (Sample)",
+            "type": "Community Legal Clinic",
+            "city": "Vancouver, BC",
+            "contact": "clinic@hope-refugee-sample.ca",
+            "license": "Clinic ID-0001 (DEMO)",
+        },
+    ]
+
+    for rep in sample_reps:
+        st.markdown(
+            f"""
+            **{rep['name']}**  
+            • Type: {rep['type']}  
+            • Location: {rep['city']}  
+            • Contact: {rep['contact']}  
+            • License / ID: {rep['license']}
+            """
+        )
+
+    st.caption(
+        "In a future version, this section can be replaced with a **real database** of nearby, "
+        "verified representatives filtered by your postal code."
+    )
+
+    st.markdown("### 4. Find immigration lawyers or consultants near you")
+
+    legal_city = st.text_input(
+        "Your city or postal code (to search for local lawyers/consultants)",
+        placeholder="e.g., Toronto, ON or M2M 3X9",
+    )
+
+    if legal_city.strip():
+        q_city = legal_city.strip()
+        search_lawyer_url = google_search_url(f"immigration lawyer near {q_city}")
+        search_consultant_url = google_search_url(f"immigration consultant RCIC near {q_city}")
+        search_clinic_url = google_search_url(f"legal aid immigration clinic near {q_city}")
+
+        st.markdown(f"- [Immigration lawyers near {q_city}]({search_lawyer_url})")
+        st.markdown(f"- [Licensed immigration consultants (RCIC) near {q_city}]({search_consultant_url})")
+        st.markdown(f"- [Community legal clinics / legal aid near {q_city}]({search_clinic_url})")
+
+        st.info(
+            "When you contact someone, ask if they offer **free or low-cost initial consultations**. "
+            "If you have low income, ask about **legal aid** in your province."
+        )
+    else:
+        st.warning("Enter your city or postal code to build local search links for legal help.")
+
+    legal_page_text_for_translation = legal_intro_text + "\n\n" + legal_steps_text
+    translate_section_button(legal_page_text_for_translation, key="tr_legal")
+
+
+# =========================================================
+# Page 9 – Immigration Guides
 # =========================================================
 
 elif page == "📚 Immigration Guides":
@@ -927,7 +1212,7 @@ elif page == "📚 Immigration Guides":
             )
 
 # =========================================================
-# Page 9 – About
+# Page 10 – About
 # =========================================================
 
 elif page == "ℹ️ About this App":
@@ -943,12 +1228,18 @@ elif page == "ℹ️ About this App":
         - **Banking, housing, jobs, worship, and cultural supports**
         - Practical **first-steps guides** for arrival and settlement
 
+        It also includes early **AI-powered features** like:
+        - Tailored Q&A responses using an LLM (if configured)
+        - Resume review suggestions for Canadian-style applications
+        - Page-level translation to Amharic (አማርኛ) for key sections
+
         ### How you can extend this
 
         - Plug in richer FAQ content from official newcomer services
         - Add more structured data for neighbourhoods, rents, and transit
         - Integrate external LLMs (OpenAI, etc.) via `st.secrets` for smarter answers
         - Use real APIs (e.g., job boards, housing platforms, map services) instead of search links
+        - Connect a **real database of IRCC-authorized representatives** for the legal help page
         - Localize content in French, Amharic, Arabic, etc.
 
         ### Disclaimer
