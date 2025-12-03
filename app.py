@@ -1,7 +1,17 @@
+import os
 import json
 from pathlib import Path
 from difflib import SequenceMatcher  # needed for best_faq_match
+from urllib.parse import quote_plus  # for building search URLs
 import streamlit as st
+
+# Optional OpenAI import
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    openai = None
+    OPENAI_AVAILABLE = False
 
 # ✅ FIRST and ONLY Streamlit page config call
 st.set_page_config(
@@ -75,6 +85,99 @@ def get_guide_by_topic(topic: str):
         if g.get("topic") == topic:
             return g
     return None
+
+
+def maps_search_url(query: str) -> str:
+    """Build a Google Maps search URL."""
+    return f"https://www.google.com/maps/search/{quote_plus(query)}"
+
+
+def google_search_url(query: str) -> str:
+    """Generic Google search URL."""
+    return f"https://www.google.com/search?q={quote_plus(query)}"
+
+
+def get_openai_client():
+    """Return configured OpenAI client or None if not available."""
+    if not OPENAI_AVAILABLE:
+        return None
+
+    api_key = None
+    # Try Streamlit secrets
+    try:
+        api_key = st.secrets.get("OPENAI_API_KEY", None)
+    except Exception:
+        api_key = None
+
+    # Fallback to environment variable
+    if not api_key:
+        api_key = os.getenv("OPENAI_API_KEY")
+
+    if not api_key:
+        return None
+
+    openai.api_key = api_key
+    return openai
+
+
+def generate_ai_answer(user_question: str, faq: dict | None, language: str):
+    """
+    Call OpenAI (if available) to generate a tailored answer as
+    'MyCanada Newcomer AI Assistant'. Returns (answer, error_message).
+    """
+    client = get_openai_client()
+    if client is None:
+        return None, (
+            "AI is not configured (missing API key or library). "
+            "Showing FAQ-based answer only."
+        )
+
+    ref_text = ""
+    if faq:
+        ref_text = (
+            f"Closest FAQ (for reference, do not copy blindly):\n"
+            f"Q: {faq.get('question', '')}\n"
+            f"A: {faq.get('answer', '')}\n"
+        )
+
+    system_msg = (
+        "You are 'MyCanada Newcomer AI Assistant', a warm, supportive assistant for "
+        "people who are new to Canada. You provide practical, concrete guidance about "
+        "immigration basics, banking, housing, jobs, community supports, and daily life. "
+        "You always remind users to verify legal and immigration details on official "
+        "Government of Canada / IRCC sources. Keep answers clear and not too long."
+    )
+
+    if "Amharic" in language:
+        system_msg += (
+            " Respond fully in Amharic (አማርኛ), using simple, clear language and short paragraphs. "
+            "You may keep bank or website names in English when needed."
+        )
+    else:
+        system_msg += " Respond in clear, simple English."
+
+    user_msg = (
+        f"User question:\n{user_question}\n\n"
+        f"{ref_text}\n\n"
+        "As the MyCanada Newcomer AI Assistant, give a step-by-step answer tailored to this user. "
+        "At the end, ask 1–2 short clarifying or follow-up questions to keep the conversation going, "
+        "but do NOT answer those follow-up questions yet."
+    )
+
+    try:
+        # Using ChatCompletion from openai~=0.x
+        response = client.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.5,
+        )
+        answer = response.choices[0].message["content"]
+        return answer, None
+    except Exception as e:
+        return None, f"AI error: {e}"
 
 
 # =========================================================
@@ -212,10 +315,15 @@ st.caption(
 )
 
 # =========================================================
-# Sidebar – Data inputs & navigation
+# Sidebar – Data inputs, language & navigation
 # =========================================================
 
 st.sidebar.title("MyCanada Controls")
+
+language = st.sidebar.selectbox(
+    "Language / ቋንቋ",
+    ["English", "Amharic (አማርኛ)"],
+)
 
 st.sidebar.subheader("Mode")
 page = st.sidebar.radio(
@@ -223,6 +331,11 @@ page = st.sidebar.radio(
     [
         "🤖 Ask the Newcomer Assistant",
         "🏙️ Explore Cities & Provinces",
+        "🏦 Open a Bank Account",
+        "🏡 Housing Search",
+        "💼 Employment Services",
+        "🛕 Places of Worship",
+        "🥘 Food & Cultural Community Support",
         "📚 Immigration Guides",
         "ℹ️ About this App",
     ],
@@ -248,58 +361,104 @@ st.sidebar.caption(
 )
 
 # =========================================================
-# Page 1 – Ask the assistant (FAQ-style QA)
+# Page 1 – Ask the assistant (FAQ-style QA with AI)
 # =========================================================
 
 if page == "🤖 Ask the Newcomer Assistant":
-    st.subheader("Ask the Newcomer Assistant")
+    if "Amharic" in language:
+        st.subheader("ከ MyCanada አዲስ መጣ ኤይአይ አስስታንት ጋር ጠይቅ")
+        question_label = "ስለ ካናዳ መግባት ወይም መቀመጥ ጥያቄህን እዚህ ጻፍ፦"
+        question_ph = "ለምሳሌ፡ የንባብ ፈቃድ እንዴት እሰራ? ለ Express Entry የሥራ ስምሪት አስፈላጊ ነው?"
+        ask_label = "ከ MyCanada አስስታንት ጠይቅ"
+    else:
+        st.subheader("Ask the Newcomer Assistant")
+        question_label = "Type your question about coming to or settling in Canada:"
+        question_ph = (
+            "e.g., How do I apply for a study permit? Do I need a job offer for Express Entry?"
+        )
+        ask_label = "Ask MyCanada Assistant"
 
     col_q, col_info = st.columns([2, 1.2])
 
     with col_q:
         user_question = st.text_input(
-            "Type your question about coming to or settling in Canada:",
-            placeholder="e.g., How do I apply for a study permit? Do I need a job offer for Express Entry?",
+            question_label,
+            placeholder=question_ph,
         )
-        ask = st.button("Ask MyCanada Assistant")
+        ask = st.button(ask_label)
 
     with col_info:
-        st.markdown(
-            """
-            <div class="mc-card">
-                <strong>Tips for better answers</strong>
-                <ul style="padding-left:1.1rem;margin-top:0.4rem;">
-                    <li>Ask one main question at a time.</li>
-                    <li>Mention if you are a student, worker, or refugee claimant.</li>
-                    <li>Always double-check details on official IRCC sites.</li>
-                </ul>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        if "Amharic" in language:
+            st.markdown(
+                """
+                <div class="mc-card">
+                    <strong>ጠቃሚ መመሪያዎች</strong>
+                    <ul style="padding-left:1.1rem;margin-top:0.4rem;">
+                        <li>አንድ ዋና ጥያቄ ብቻ ለያይ።</li>
+                        <li>ተማሪ፣ ሰራተኛ ወይም እስር የፈጠረብህ መሆንህን ይግለጹ።</li>
+                        <li>ሁልጊዜ ከመንግስት የካናዳ / IRCC ድህረገፅ ጋር ያረጋግጡ።</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                """
+                <div class="mc-card">
+                    <strong>Tips for better answers</strong>
+                    <ul style="padding-left:1.1rem;margin-top:0.4rem;">
+                        <li>Ask one main question at a time.</li>
+                        <li>Mention if you are a student, worker, or refugee claimant.</li>
+                        <li>Always double-check details on official IRCC sites.</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     if ask and user_question.strip():
         faq, score = best_faq_match(user_question)
 
-        st.markdown("### 🗣️ Your question")
+        # Try AI first
+        ai_answer, ai_error = generate_ai_answer(user_question, faq, language)
+
+        if "Amharic" in language:
+            st.markdown("### 🗣️ ጥያቄህ")
+        else:
+            st.markdown("### 🗣️ Your question")
         st.write(user_question)
 
-        st.markdown("### 🤖 Assistant answer")
-        if faq:
-            st.write(faq.get("answer", ""))
-            if faq.get("tags"):
-                st.markdown(
-                    " ".join(f'<span class="mc-chip">{t}</span>' for t in faq["tags"]),
-                    unsafe_allow_html=True,
-                )
+        if "Amharic" in language:
+            st.markdown("### 🤖 መልስ ከ MyCanada አስስታንት")
         else:
-            st.warning(
-                "I could not find a close match in my current FAQ data. "
-                "Try rephrasing your question or selecting a guide on the **Immigration Guides** page."
-            )
+            st.markdown("### 🤖 Assistant answer")
 
-        st.markdown("### 🔍 Closest matched FAQ (for transparency)")
+        if ai_answer:
+            st.write(ai_answer)
+        else:
+            # Fallback: FAQ only
+            if ai_error:
+                st.info(ai_error)
+            if faq:
+                st.write(faq.get("answer", ""))
+                if faq.get("tags"):
+                    st.markdown(
+                        " ".join(f'<span class="mc-chip">{t}</span>' for t in faq["tags"]),
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.warning(
+                    "I could not find a close match in my current FAQ data. "
+                    "Try rephrasing your question or selecting a guide on the **Immigration Guides** page."
+                )
+
+        # Transparency: show matched FAQ
         if faq:
+            if "Amharic" in language:
+                st.markdown("### 🔍 በጣም ተመሳሳይ የተገኘው FAQ")
+            else:
+                st.markdown("### 🔍 Closest matched FAQ (for transparency)")
             with st.expander("Show matched FAQ"):
                 st.write(f"**Matched question (similarity: {score:.2f})**")
                 st.write(faq.get("question", ""))
@@ -389,7 +548,348 @@ elif page == "🏙️ Explore Cities & Provinces":
                     )
 
 # =========================================================
-# Page 3 – Immigration Guides
+# Page 3 – Open a Bank Account
+# =========================================================
+
+elif page == "🏦 Open a Bank Account":
+    st.subheader("🏦 Open a Bank Account in Canada")
+
+    st.markdown(
+        """
+        Opening a bank account early helps you **receive your salary, pay rent, and build credit**.
+        Let’s go through the key steps together.
+        """
+    )
+
+    location = st.text_input(
+        "Where are you right now? (city or postal code)",
+        placeholder="e.g., Toronto, ON or M5V 2T6",
+    )
+
+    st.markdown("### 1. Key steps to open a basic chequing account")
+
+    st.markdown(
+        """
+        1. **Choose a bank and account type** (e.g., newcomer chequing account, student account).  
+        2. **Prepare your documents** (usually 2 pieces of ID):  
+           - Passport  
+           - Study permit / work permit / PR card  
+           - Proof of address (rental agreement, utility bill, official letter)  
+           - SIN (if you have it – not required to open an account, but often requested)  
+        3. **Book an appointment or walk in** to a branch.  
+        4. **Meet with a banking advisor** – they verify your ID, open your account, and give you a debit card.  
+        5. **Set up online & mobile banking**, e-Transfers, and alerts.  
+        6. (Optional) Ask about **credit card**, **overdraft**, and **newcomer welcome offers**.
+        """
+    )
+
+    st.markdown("### 2. Newcomer banking programs (Big 5 banks)")
+
+    st.info(
+        "Most major banks have **newcomer packages** with no-fee accounts for 6–12 months, "
+        "free international transfers, or cash bonuses. Always check the latest details on their websites."
+    )
+
+    bank_links = {
+        "RBC – Newcomers to Canada": "https://www.rbc.com/newcomers",
+        "TD – New to Canada Banking": "https://www.td.com/ca/en/personal-banking/solutions/new-to-canada",
+        "Scotiabank – StartRight® Program": "https://www.scotiabank.com/ca/en/personal/bank/bank-accounts/newcomers.html",
+        "CIBC – Newcomer Banking": "https://www.cibc.com/en/personal-banking/newcomers.html",
+        "BMO – NewStart® Program": "https://www.bmo.com/main/personal/bank-accounts/newcomers-to-canada",
+    }
+
+    for label, url in bank_links.items():
+        st.markdown(f"- [{label}]({url})")
+
+    st.markdown("### 3. Find branches near you")
+
+    if location.strip():
+        st.success("Here are quick links to find branches close to you on Google Maps:")
+
+        banks = ["RBC", "TD Bank", "Scotiabank", "CIBC", "BMO Bank of Montreal"]
+
+        for b in banks:
+            query = f"{b} near {location}"
+            url = maps_search_url(query)
+            st.markdown(f"- [{b} near {location}]({url})")
+
+        st.caption(
+            "Tip: When you open the map, you’ll see **distance, directions, opening hours, and phone numbers**."
+        )
+    else:
+        st.warning("Please type your city or postal code above so I can suggest nearby branches.")
+
+# =========================================================
+# Page 4 – Housing Search
+# =========================================================
+
+elif page == "🏡 Housing Search":
+    st.subheader("🏡 Rental Housing for Newcomers")
+
+    st.markdown(
+        "Let’s explore rental options based on your **city, budget, and type of place**."
+    )
+
+    city = st.text_input("Preferred city", placeholder="e.g., Ottawa, ON")
+    budget = st.slider(
+        "Approximate monthly budget (CAD)",
+        min_value=500,
+        max_value=4000,
+        value=1800,
+        step=50,
+    )
+    accom_type = st.selectbox(
+        "Type of accommodation",
+        [
+            "Any",
+            "Room in shared house",
+            "Bachelor / studio",
+            "1-bedroom apartment",
+            "2-bedroom apartment",
+            "Family-size house / townhouse",
+        ],
+    )
+
+    if city.strip():
+        st.markdown("### 1. Search rental listings (trusted platforms)")
+
+        city_q = city.strip()
+        search_phrase = f"rent {accom_type} {city_q}" if accom_type != "Any" else f"rent apartment {city_q}"
+
+        links = {
+            "Rentals.ca": google_search_url(f"site:rentals.ca {search_phrase}"),
+            "Kijiji Rentals": google_search_url(f"site:kijiji.ca {search_phrase}"),
+            "Facebook Marketplace": "https://www.facebook.com/marketplace/search/?query="
+            + quote_plus(search_phrase),
+            "PadMapper / Zumper / Others": google_search_url(f"rentals {city_q} apartments"),
+        }
+
+        for label, url in links.items():
+            st.markdown(f"- [{label} – search for **{city_q}**]({url})")
+
+        st.markdown("### 2. Neighbourhood & rent guidance (approximate)")
+
+        low = max(400, budget - 400)
+        mid_low = max(500, budget - 200)
+        mid_high = budget + 200
+        high = budget + 500
+
+        st.markdown(
+            f"""
+            These are **very rough ranges** you might see in many Canadian cities.  
+            Actual prices vary a lot by city and neighbourhood:
+
+            - **Budget / shared options**: ~${low}–${mid_low} / month  
+            - **Typical 1-bedroom**: ~${mid_low}–${mid_high} / month  
+            - **Larger family units**: ~${mid_high}–${high}+ / month  
+
+            Use these numbers only as a **starting point**, and always confirm with the actual listing.
+            """
+        )
+
+        st.markdown("### 3. Transit & commute tips")
+
+        st.info(
+            "When checking a listing, open it in Google Maps and look for:\n"
+            "- Distance to your school / workplace\n"
+            "- Bus / subway / LRT lines nearby\n"
+            "- Travel time during rush hour\n"
+            "- Walking distance to grocery stores and pharmacies"
+        )
+    else:
+        st.warning("Please enter a city so I can tailor housing search links for you.")
+
+# =========================================================
+# Page 5 – Employment Services
+# =========================================================
+
+elif page == "💼 Employment Services":
+    st.subheader("💼 Find Jobs & Employment Support")
+
+    st.markdown(
+        "Let’s search for jobs and newcomer employment services that match your goals."
+    )
+
+    job_title = st.text_input(
+        "What type of job are you looking for?",
+        placeholder="e.g., Data analyst, PSW, warehouse worker, cashier",
+    )
+    job_city = st.text_input(
+        "Preferred city or region for work",
+        placeholder="e.g., Toronto, ON or Calgary, AB",
+    )
+
+    if job_title.strip() and job_city.strip():
+        q_job = job_title.strip()
+        q_city = job_city.strip()
+
+        st.markdown("### 1. Job postings on trusted Canadian platforms")
+
+        indeed_url = f"https://ca.indeed.com/jobs?q={quote_plus(q_job)}&l={quote_plus(q_city)}"
+        jobbank_url = (
+            "https://www.jobbank.gc.ca/jobsearch/jobsearch?"
+            f"searchstring={quote_plus(q_job)}&locationstring={quote_plus(q_city)}"
+        )
+        linkedin_url = (
+            "https://www.linkedin.com/jobs/search/?"
+            f"keywords={quote_plus(q_job)}&location={quote_plus(q_city)}"
+        )
+
+        st.markdown(f"- [Indeed – {q_job} in {q_city}]({indeed_url})")
+        st.markdown(f"- [Job Bank – {q_job} in {q_city}]({jobbank_url})")
+        st.markdown(f"- [LinkedIn Jobs – {q_job} in {q_city}]({linkedin_url})")
+
+        st.markdown("### 2. Match & relevance (how to judge a good posting)")
+
+        st.info(
+            "Look for:\n"
+            "- Job title and duties similar to your skills\n"
+            "- Required experience close to your background\n"
+            "- Location and work arrangement (on-site / hybrid / remote)\n"
+            "- Salary range that fits your expectations\n"
+            "- Employer offering training or support for newcomers"
+        )
+
+        st.markdown("### 3. Newcomer employment centres near you")
+
+        newcomer_query = f"employment services for newcomers near {q_city}"
+        newcomer_url = maps_search_url(newcomer_query)
+
+        st.markdown(
+            f"- [Newcomer employment & settlement services near {q_city}]({newcomer_url})"
+        )
+        st.caption(
+            "These can include YMCA, COSTI, ACCES Employment, immigrant settlement agencies, "
+            "and community organizations that help with resumes, networking, and interview practice."
+        )
+
+        st.markdown("### 4. Resume & interview tips (tailored to your role)")
+
+        st.write(
+            f"For **{q_job}** roles, try to:\n"
+            "- Highlight your most recent **work experience** that matches the job duties\n"
+            "- Use **Canadian-style resume format** (1–2 pages, no photo, clear bullet points)\n"
+            "- Add **quantified results** (e.g., 'reduced processing time by 20%') where possible\n"
+            "- Practice answers to common questions such as:\n"
+            "  - 'Tell me about yourself'\n"
+            "  - 'Why do you want this role?'\n"
+            "  - 'Tell me about a time you solved a problem at work'\n"
+        )
+    else:
+        st.warning("Please enter both a job type and a city so I can build search links for you.")
+
+# =========================================================
+# Page 6 – Places of Worship
+# =========================================================
+
+elif page == "🛕 Places of Worship":
+    st.subheader("🛕 Find a Place of Worship or Spiritual Community")
+
+    worship_type = st.selectbox(
+        "What type of worship place are you looking for?",
+        [
+            "Christian church",
+            "Muslim mosque",
+            "Jewish synagogue",
+            "Hindu temple",
+            "Buddhist temple",
+            "Sikh gurdwara",
+            "Other / interfaith centre",
+        ],
+    )
+
+    worship_city = st.text_input(
+        "Your city or postal code",
+        placeholder="e.g., Winnipeg, MB or H3Z 2Y7",
+    )
+
+    if worship_city.strip():
+        label_map = {
+            "Christian church": "church",
+            "Muslim mosque": "mosque",
+            "Jewish synagogue": "synagogue",
+            "Hindu temple": "hindu temple",
+            "Buddhist temple": "buddhist temple",
+            "Sikh gurdwara": "gurdwara",
+            "Other / interfaith centre": "spiritual centre",
+        }
+        place_keyword = label_map.get(worship_type, "church")
+        query = f"{place_keyword} near {worship_city.strip()}"
+        url = maps_search_url(query)
+
+        st.markdown("### Nearest worship centres")
+
+        st.markdown(
+            f"- [See **{worship_type}** locations near {worship_city.strip()} on Google Maps]({url})"
+        )
+        st.caption(
+            "On the map you’ll see **distance, service times, website links, and phone numbers** "
+            "for many places of worship. You can also read reviews and see photos."
+        )
+
+        st.info(
+            "If you prefer a specific language (e.g., Amharic, Arabic, Spanish), you can add it to your search "
+            "query in Google Maps for more tailored results."
+        )
+    else:
+        st.warning("Please enter your city or postal code so I can locate nearby places of worship.")
+
+# =========================================================
+# Page 7 – Food & Cultural Community Support
+# =========================================================
+
+elif page == "🥘 Food & Cultural Community Support":
+    st.subheader("🥘 Find Your Food, Culture & Community")
+
+    origin_country = st.text_input(
+        "Which country or culture do you identify with most?",
+        placeholder="e.g., Ethiopia, India, Philippines, Brazil",
+    )
+    food_city = st.text_input(
+        "Where are you living now? (city or postal code)",
+        placeholder="e.g., Surrey, BC or M1P 4P5",
+    )
+
+    if origin_country.strip() and food_city.strip():
+        o = origin_country.strip()
+        c = food_city.strip()
+
+        st.markdown("### 1. Grocery stores with your traditional foods")
+
+        grocery_query = f"{o} grocery store near {c}"
+        grocery_url = maps_search_url(grocery_query)
+        st.markdown(f"- [Stores selling **{o}** foods near {c}]({grocery_url})")
+
+        st.markdown("### 2. Cultural associations & community groups")
+
+        assoc_query = f"{o} community association near {c}"
+        assoc_url = google_search_url(assoc_query)
+        st.markdown(f"- [Cultural associations and community groups]({assoc_url})")
+
+        st.markdown("### 3. Restaurants, cafés, and local events")
+
+        rest_query = f"{o} restaurant near {c}"
+        rest_url = maps_search_url(rest_query)
+        events_query = f"{o} cultural events {c}"
+        events_url = google_search_url(events_query)
+
+        st.markdown(f"- [Restaurants & cafés serving **{o}** food near {c}]({rest_url})")
+        st.markdown(f"- [Local cultural events and festivals]({events_url})")
+
+        st.caption(
+            "On these pages you'll usually find **opening hours, phone numbers, websites, and directions**. "
+            "Many communities also organize language schools, youth programs, and holiday celebrations."
+        )
+
+        st.info(
+            "You are not alone. Connecting with people from your culture **and** new Canadian friends can "
+            "make your first months much easier and warmer."
+        )
+    else:
+        st.warning("Please fill in both your country/culture and your current city/postal code.")
+
+# =========================================================
+# Page 8 – Immigration Guides
 # =========================================================
 
 elif page == "📚 Immigration Guides":
@@ -427,7 +927,7 @@ elif page == "📚 Immigration Guides":
             )
 
 # =========================================================
-# Page 4 – About
+# Page 9 – About
 # =========================================================
 
 elif page == "ℹ️ About this App":
@@ -440,13 +940,15 @@ elif page == "ℹ️ About this App":
 
         - Basic **immigration FAQs** (study permits, PR, work permits)
         - **City & province options** across Canada
+        - **Banking, housing, jobs, worship, and cultural supports**
         - Practical **first-steps guides** for arrival and settlement
 
         ### How you can extend this
 
         - Plug in richer FAQ content from official newcomer services
-        - Add more cities, regions, and filters (e.g., rent levels, industry clusters)
+        - Add more structured data for neighbourhoods, rents, and transit
         - Integrate external LLMs (OpenAI, etc.) via `st.secrets` for smarter answers
+        - Use real APIs (e.g., job boards, housing platforms, map services) instead of search links
         - Localize content in French, Amharic, Arabic, etc.
 
         ### Disclaimer
